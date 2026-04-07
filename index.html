@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TimeTrack — Tracker & Facturas</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+:root {
+  --bg: #e2e2e2;
+  --surface: #ececec;
+  --surface2: #f5f5f5;
+  --border: #d0d0d0;
+  --border2: #c4c4c4;
+  --text: #111111;
+  --muted: #666666;
+  --muted2: #999999;
+  --accent: #111111;
+  --accent-dim: #11111112;
+  --accent-text: #ffffff;
+  --red: #c00000;
+  --red-dim: #c0000012;
+  --blue: #333333;
+  --blue-dim: #33333312;
+  --mono: 'DM Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* LAYOUT */
+.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky; top: 0; height: 100vh;
+}
+.logo {
+  padding: 0 1.25rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+.logo-mark { font-family: var(--mono); font-size: 18px; font-weight: 500; color: var(--accent); letter-spacing: -0.5px; }
+.logo-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 1.25rem;
+  font-size: 13px; font-weight: 500; color: var(--muted);
+  cursor: pointer; border: none; background: none; width: 100%;
+  text-align: left; border-radius: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.nav-item:hover { color: var(--text); background: var(--surface2); }
+.nav-item.active { color: var(--accent); background: var(--accent-dim); }
+.nav-icon { font-size: 14px; width: 18px; text-align: center; }
+.sidebar-footer {
+  margin-top: auto; padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted2);
+}
+
+.main { padding: 2rem 2.5rem; max-width: 960px; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* TYPOGRAPHY */
+h1 { font-size: 22px; font-weight: 600; margin-bottom: 0.25rem; }
+.page-sub { font-size: 13px; color: var(--muted); margin-bottom: 2rem; }
+h2 { font-size: 15px; font-weight: 600; margin-bottom: 1rem; }
+
+/* INPUTS */
+input, select, textarea {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-family: var(--sans);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+input::placeholder { color: var(--muted2); }
+select option { background: #222; }
+label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
+
+/* BUTTONS */
+.btn {
+  padding: 9px 18px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border2);
+  background: transparent; color: var(--text);
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.btn:hover { background: var(--surface2); border-color: var(--border2); }
+.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.btn.primary:hover { opacity: 0.88; }
+.btn.danger { color: var(--red); border-color: transparent; }
+.btn.danger:hover { background: var(--red-dim); }
+.btn.sm { padding: 6px 12px; font-size: 12px; }
+.btn.running { background: var(--red); color: #fff; border-color: var(--red); }
+.btn.running:hover { opacity: 0.88; }
+
+/* CARDS */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+.card-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1rem; }
+
+/* STATS ROW */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 1.5rem; }
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+}
+.stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+.stat-value { font-size: 24px; font-weight: 600; font-family: var(--mono); }
+.stat-value.accent { color: #333333; }
+
+/* TIMER SECTION */
+.timer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px 90px 80px;
+  gap: 10px; align-items: end;
+  margin-bottom: 1.5rem;
+}
+.timer-display {
+  font-family: var(--mono);
+  font-size: 42px; font-weight: 500;
+  color: var(--accent);
+  letter-spacing: -1px;
+  margin-bottom: 0.75rem;
+}
+.timer-display.paused { color: var(--muted); }
+
+/* PROJECT TREE */
+.project-group { margin-bottom: 1rem; }
+.project-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.project-name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.project-toggle { color: var(--muted); font-size: 11px; transition: transform 0.2s; }
+.project-toggle.open { transform: rotate(90deg); }
+.project-meta { font-size: 12px; color: var(--muted); display: flex; gap: 16px; }
+.task-group { padding-left: 1.25rem; overflow: hidden; transition: max-height 0.3s ease; }
+.task-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.task-row:last-child { border-bottom: none; }
+.task-name { flex: 1; font-weight: 500; }
+.task-date { font-size: 11px; color: var(--muted); font-family: var(--mono); min-width: 80px; }
+.task-duration { font-family: var(--mono); font-size: 12px; color: var(--text); min-width: 72px; text-align: right; }
+.task-amount { font-family: var(--mono); font-size: 12px; color: var(--accent); min-width: 80px; text-align: right; }
+.badge {
+  font-size: 10px; padding: 2px 7px; border-radius: 20px;
+  font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.badge.pending { background: #d0d0d0; color: #333; }
+.badge.billed { background: var(--surface2); color: var(--muted2); border: 1px solid var(--border); }
+
+/* MANUAL ENTRY FORM */
+.manual-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 120px 80px 80px 80px auto;
+  gap: 8px; align-items: end; margin-bottom: 1rem;
+}
+
+/* INVOICE */
+.inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1rem; }
+.entry-check-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px; cursor: pointer;
+}
+.entry-check-row:last-child { border-bottom: none; }
+input[type="checkbox"] {
+  width: 16px; height: 16px; accent-color: #333;
+  flex-shrink: 0; cursor: pointer;
+}
+.inv-preview-wrap {
+  background: #fff; color: #111;
+  border-radius: var(--radius);
+  padding: 2.5rem;
+  margin-top: 1.5rem;
+  font-family: Georgia, serif;
+}
+.inv-preview-wrap * { font-family: Georgia, serif; }
+.inv-p-title { font-size: 28px; font-weight: bold; margin-bottom: 4px; }
+.inv-p-num { font-size: 13px; color: #888; }
+.inv-p-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0; }
+.inv-p-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 4px; }
+.inv-p-name { font-size: 14px; font-weight: bold; }
+.inv-p-detail { font-size: 12px; color: #666; }
+.inv-p-table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+.inv-p-table th { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #888; padding: 6px 0; border-bottom: 1px solid #eee; text-align: left; }
+.inv-p-table td { padding: 9px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+.inv-p-table td:last-child { text-align: right; font-weight: bold; }
+.inv-p-totals { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.inv-p-trow { display: flex; gap: 3rem; font-size: 13px; }
+.inv-p-trow.total { font-size: 16px; font-weight: bold; border-top: 2px solid #111; padding-top: 8px; margin-top: 4px; }
+.inv-p-notes { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #eee; font-size: 11px; color: #888; }
+
+/* DIVIDER */
+.divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+
+/* EMPTY */
+.empty { text-align: center; padding: 2.5rem; color: var(--muted); font-size: 13px; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+@media (max-width: 720px) {
+  .shell { grid-template-columns: 1fr; }
+  .sidebar { position: static; height: auto; flex-direction: row; padding: 0.75rem; overflow-x: auto; }
+  .logo { display: none; }
+  .sidebar-footer { display: none; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .timer-row { grid-template-columns: 1fr 1fr; }
+  .manual-row { grid-template-columns: 1fr 1fr; }
+  .inv-grid { grid-template-columns: 1fr; }
+  .main { padding: 1rem; }
+}
+
+@media print {
+  .shell { display: block; }
+  .sidebar, .main > *:not(#inv-print-target) { display: none !important; }
+  .inv-preview-wrap { border: none; box-shadow: none; padding: 0; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-mark">TT/</div>
+      <div class="logo-sub">Time Tracker</div>
+    </div>
+    <button class="nav-item active" onclick="nav('tracker')">
+      <span class="nav-icon">⏱</span> Tracker
+    </button>
+    <button class="nav-item" onclick="nav('proyectos')">
+      <span class="nav-icon">📁</span> Proyectos
+    </button>
+    <button class="nav-item" onclick="nav('manual')">
+      <span class="nav-icon">✏️</span> Entrada manual
+    </button>
+    <button class="nav-item" onclick="nav('facturas')">
+      <span class="nav-icon">🧾</span> Facturas
+    </button>
+    <div class="sidebar-footer">Datos en localStorage · v1.0</div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- TRACKER -->
+    <div id="page-tracker" class="page active">
+      <h1>Tracker</h1>
+      <p class="page-sub">Inicia el timer — sigue corriendo aunque cambies de pestaña.</p>
+
+      <div id="timer-display" class="timer-display paused">00:00:00</div>
+
+      <div class="timer-row">
+        <label class="field">Proyecto
+          <select id="t-project" onchange="syncTaskSelect()">
+            <option value="">— nuevo proyecto —</option>
+          </select>
+        </label>
+        <label class="field">Tarea
+          <input type="text" id="t-task" placeholder="Descripción de la tarea..." />
+        </label>
+        <label class="field">Tarifa/hr
+          <input type="number" id="t-rate" placeholder="50" min="0" />
+        </label>
+        <label class="field">Moneda
+          <select id="t-currency">
+            <option>USD</option><option>PEN</option><option>EUR</option><option>MXN</option>
+          </select>
+        </label>
+        <label class="field">&nbsp;
+          <button id="start-btn" class="btn primary" onclick="toggleTimer()">Iniciar</button>
+        </label>
+      </div>
+
+      <!-- New project inline -->
+      <div id="new-proj-row" style="display:none;margin-bottom:1.5rem;">
+        <label class="field">Nombre del nuevo proyecto
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="new-proj-name" placeholder="Ej: Rediseño web Bonkar" style="flex:1;" />
+            <input type="text" id="new-proj-client" placeholder="Cliente" style="flex:1;" />
+            <button class="btn sm" onclick="createProject()">Crear</button>
+            <button class="btn sm danger" onclick="document.getElementById('new-proj-row').style.display='none'">✕</button>
+          </div>
+        </label>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat-label">Hoy</div><div class="stat-value" id="stat-hoy">0h 0m</div></div>
+        <div class="stat"><div class="stat-label">Esta semana</div><div class="stat-value" id="stat-semana">0h 0m</div></div>
+        <div class="stat"><div class="stat-label">Este mes</div><div class="stat-value" id="stat-mes">0h 0m</div></div>
+        <div class="stat"><div class="stat-label">Por facturar</div><div class="stat-value accent" id="stat-pending">$0</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Últimas entradas</div>
+        <div id="recent-list"><div class="empty">Aún sin entradas. Inicia el timer arriba.</div></div>
+      </div>
+    </div>
+
+    <!-- PROYECTOS -->
+    <div id="page-proyectos" class="page">
+      <h1>Proyectos</h1>
+      <p class="page-sub">Tiempo agrupado por proyecto, tarea y fecha.</p>
+      <div id="project-tree"><div class="empty">Sin proyectos todavía.</div></div>
+    </div>
+
+    <!-- ENTRADA MANUAL -->
+    <div id="page-manual" class="page">
+      <h1>Entrada manual</h1>
+      <p class="page-sub">Agrega tiempo trabajado que olvidaste trackear.</p>
+
+      <div class="card">
+        <div class="card-title">Nueva entrada</div>
+        <div class="manual-row">
+          <label class="field">Proyecto
+            <select id="m-project">
+              <option value="">— seleccionar —</option>
+            </select>
+          </label>
+          <label class="field">Tarea
+            <input type="text" id="m-task" placeholder="Descripción..." />
+          </label>
+          <label class="field">Fecha
+            <input type="date" id="m-date" />
+          </label>
+          <label class="field">Horas
+            <input type="number" id="m-hours" placeholder="2" min="0" max="24" step="0.25" />
+          </label>
+          <label class="field">Minutos
+            <input type="number" id="m-minutes" placeholder="30" min="0" max="59" />
+          </label>
+          <label class="field">Tarifa/hr
+            <input type="number" id="m-rate" placeholder="50" min="0" />
+          </label>
+          <label class="field">&nbsp;
+            <button class="btn primary" onclick="addManual()">Agregar</button>
+          </label>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:0;">
+        <div class="card-title">Todas las entradas</div>
+        <div id="all-entries-list"><div class="empty">Sin entradas.</div></div>
+      </div>
+    </div>
+
+    <!-- FACTURAS -->
+    <div id="page-facturas" class="page">
+      <h1>Facturas</h1>
+      <p class="page-sub">Genera una factura con las entradas pendientes.</p>
+
+      <div class="card">
+        <div class="card-title">Datos de la factura</div>
+        <div class="inv-grid">
+          <label class="field">Tu nombre / empresa <input type="text" id="inv-from" placeholder="Lipe Huamán — Diseño & Web" /></label>
+          <label class="field">Cliente <input type="text" id="inv-to" placeholder="Nombre del cliente" /></label>
+          <label class="field">Tu email / dirección <input type="text" id="inv-from-d" placeholder="lipe@email.com" /></label>
+          <label class="field">Email / dirección del cliente <input type="text" id="inv-to-d" placeholder="cliente@empresa.com" /></label>
+          <label class="field">Número de factura <input type="text" id="inv-num" /></label>
+          <label class="field">Fecha emisión <input type="date" id="inv-date" /></label>
+          <label class="field">Fecha vencimiento <input type="date" id="inv-due" /></label>
+          <label class="field">IGV / IVA / Tax (%) <input type="number" id="inv-tax" value="18" min="0" max="100" /></label>
+        </div>
+        <label class="field">Notas / condiciones de pago <input type="text" id="inv-notes" placeholder="Pago por transferencia en 15 días hábiles..." /></label>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Entradas a incluir (sin facturar)</div>
+        <div id="inv-selector"><div class="empty">No hay entradas pendientes.</div></div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-bottom:1.5rem;">
+        <button class="btn primary" onclick="generateInvoice()">Generar factura →</button>
+      </div>
+
+      <div id="inv-print-target"></div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let state = JSON.parse(localStorage.getItem('tt_state') || 'null') || {
+  projects: [],   // {id, name, client, currency, rate}
+  entries: [],    // {id, projectId, task, date, seconds, rate, currency, billed, manual}
+  timer: null,    // {entryId, startTs}
+  invCounter: 1
+};
+
+function save() { localStorage.setItem('tt_state', JSON.stringify(state)); }
+
+function today() { return new Date().toISOString().slice(0, 10); }
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function fmtSec(s) {
+  s = Math.round(s);
+  return pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s % 3600 / 60)) + ':' + pad(s % 60);
+}
+function fmtHm(s) {
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h + 'h ' + m + 'm';
+}
+function fmtMoney(n, cur) { return (cur || 'USD') + ' ' + n.toFixed(2); }
+
+// ─── TIMER (timestamp-based) ──────────────────────────────────────────────────
+let tickInterval = null;
+
+function getTimerSeconds() {
+  if (!state.timer) return 0;
+  const entry = state.entries.find(e => e.id === state.timer.entryId);
+  if (!entry) return 0;
+  const elapsed = (Date.now() - state.timer.startTs) / 1000;
+  return (entry._baseSec || 0) + elapsed;
+}
+
+function toggleTimer() {
+  if (state.timer) {
+    // STOP
+    const entry = state.entries.find(e => e.id === state.timer.entryId);
+    if (entry) {
+      entry.seconds = Math.round(getTimerSeconds());
+      delete entry._baseSec;
+    }
+    state.timer = null;
+    save();
+    clearInterval(tickInterval);
+    tickInterval = null;
+    document.getElementById('start-btn').textContent = 'Iniciar';
+    document.getElementById('start-btn').className = 'btn primary';
+    document.getElementById('timer-display').className = 'timer-display paused';
+    renderAll();
+    return;
+  }
+
+  // START
+  const taskName = document.getElementById('t-task').value.trim();
+  const projId = document.getElementById('t-project').value;
+  if (!taskName) { document.getElementById('t-task').focus(); return; }
+
+  let projectId = projId;
+  if (!projId) {
+    // auto-create project from client/task
+    const newProj = {
+      id: 'p' + Date.now(),
+      name: 'Sin proyecto',
+      client: 'Sin cliente',
+      currency: document.getElementById('t-currency').value,
+      rate: parseFloat(document.getElementById('t-rate').value) || 0
+    };
+    state.projects.push(newProj);
+    projectId = newProj.id;
+  }
+
+  const proj = state.projects.find(p => p.id === projectId);
+  const entry = {
+    id: 'e' + Date.now(),
+    projectId,
+    task: taskName,
+    date: today(),
+    seconds: 0,
+    rate: parseFloat(document.getElementById('t-rate').value) || proj?.rate || 0,
+    currency: document.getElementById('t-currency').value || proj?.currency || 'USD',
+    billed: false,
+    manual: false,
+    _baseSec: 0
+  };
+  state.entries.unshift(entry);
+  state.timer = { entryId: entry.id, startTs: Date.now() };
+  save();
+
+  document.getElementById('start-btn').textContent = 'Detener';
+  document.getElementById('start-btn').className = 'btn running';
+  document.getElementById('timer-display').className = 'timer-display';
+
+  tickInterval = setInterval(() => {
+    document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
+    updateStats();
+  }, 1000);
+}
+
+// Restore timer on page load
+function restoreTimer() {
+  if (!state.timer) return;
+  const entry = state.entries.find(e => e.id === state.timer.entryId);
+  if (!entry) { state.timer = null; save(); return; }
+  document.getElementById('start-btn').textContent = 'Detener';
+  document.getElementById('start-btn').className = 'btn running';
+  document.getElementById('timer-display').className = 'timer-display';
+  document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
+  tickInterval = setInterval(() => {
+    document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
+    updateStats();
+  }, 1000);
+}
+
+// ─── PROJECTS ─────────────────────────────────────────────────────────────────
+function syncProjectSelects() {
+  ['t-project', 'm-project'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    const isTracker = id === 't-project';
+    sel.innerHTML = isTracker
+      ? '<option value="">— nuevo proyecto —</option>'
+      : '<option value="">— seleccionar —</option>';
+    state.projects.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name + (p.client ? ' · ' + p.client : '');
+      sel.appendChild(opt);
+    });
+    if (cur) sel.value = cur;
+  });
+}
+
+function syncTaskSelect() {
+  const projId = document.getElementById('t-project').value;
+  if (!projId) {
+    document.getElementById('new-proj-row').style.display = 'block';
+  } else {
+    document.getElementById('new-proj-row').style.display = 'none';
+    const proj = state.projects.find(p => p.id === projId);
+    if (proj) {
+      if (proj.rate) document.getElementById('t-rate').value = proj.rate;
+      if (proj.currency) document.getElementById('t-currency').value = proj.currency;
+    }
+  }
+}
+
+function createProject() {
+  const name = document.getElementById('new-proj-name').value.trim();
+  if (!name) return;
+  const proj = {
+    id: 'p' + Date.now(),
+    name,
+    client: document.getElementById('new-proj-client').value.trim() || 'Sin cliente',
+    currency: document.getElementById('t-currency').value,
+    rate: parseFloat(document.getElementById('t-rate').value) || 0
+  };
+  state.projects.push(proj);
+  save();
+  syncProjectSelects();
+  document.getElementById('t-project').value = proj.id;
+  document.getElementById('new-proj-row').style.display = 'none';
+  document.getElementById('new-proj-name').value = '';
+  document.getElementById('new-proj-client').value = '';
+}
+
+// ─── MANUAL ENTRY ─────────────────────────────────────────────────────────────
+function addManual() {
+  const projId = document.getElementById('m-project').value;
+  const task = document.getElementById('m-task').value.trim();
+  const date = document.getElementById('m-date').value || today();
+  const hours = parseFloat(document.getElementById('m-hours').value) || 0;
+  const mins = parseFloat(document.getElementById('m-minutes').value) || 0;
+  const rate = parseFloat(document.getElementById('m-rate').value) || 0;
+  if (!task || (!hours && !mins)) { alert('Completa tarea y tiempo.'); return; }
+  const proj = state.projects.find(p => p.id === projId);
+  const entry = {
+    id: 'e' + Date.now(),
+    projectId: projId || null,
+    task,
+    date,
+    seconds: Math.round((hours * 3600) + (mins * 60)),
+    rate,
+    currency: proj?.currency || 'USD',
+    billed: false,
+    manual: true
+  };
+  state.entries.unshift(entry);
+  save();
+  document.getElementById('m-task').value = '';
+  document.getElementById('m-hours').value = '';
+  document.getElementById('m-minutes').value = '';
+  renderAll();
+}
+
+// ─── STATS ────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const todayStr = today();
+  const now = new Date();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const weekStr = weekStart.toISOString().slice(0, 10);
+  const monthStr = monthStart.toISOString().slice(0, 10);
+
+  let hoy = 0, sem = 0, mes = 0, pend = 0;
+  state.entries.forEach(e => {
+    const s = e.id === state.timer?.entryId ? Math.round(getTimerSeconds()) : e.seconds;
+    if (e.date === todayStr) hoy += s;
+    if (e.date >= weekStr) sem += s;
+    if (e.date >= monthStr) mes += s;
+    if (!e.billed) pend += s / 3600 * e.rate;
+  });
+  document.getElementById('stat-hoy').textContent = fmtHm(hoy);
+  document.getElementById('stat-semana').textContent = fmtHm(sem);
+  document.getElementById('stat-mes').textContent = fmtHm(mes);
+  const cur = state.entries.find(e => !e.billed)?.currency || 'USD';
+  document.getElementById('stat-pending').textContent = cur + ' ' + pend.toFixed(2);
+}
+
+// ─── RECENT LIST ──────────────────────────────────────────────────────────────
+function renderRecent() {
+  const el = document.getElementById('recent-list');
+  const recent = state.entries.slice(0, 8);
+  if (!recent.length) { el.innerHTML = '<div class="empty">Sin entradas aún.</div>'; return; }
+  el.innerHTML = recent.map(e => {
+    const proj = state.projects.find(p => p.id === e.projectId);
+    const secs = e.id === state.timer?.entryId ? Math.round(getTimerSeconds()) : e.seconds;
+    return `<div class="task-row">
+      <span class="task-name">${e.task}</span>
+      <span style="font-size:11px;color:var(--muted);min-width:130px;">${proj ? proj.name + ' · ' + proj.client : '—'}</span>
+      <span class="task-date">${e.date}</span>
+      <span class="task-duration">${fmtSec(secs)}</span>
+      <span class="task-amount">${fmtMoney(secs / 3600 * e.rate, e.currency)}</span>
+      <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
+      <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// ─── PROJECT TREE ─────────────────────────────────────────────────────────────
+function renderProjectTree() {
+  const el = document.getElementById('project-tree');
+  if (!state.projects.length) { el.innerHTML = '<div class="empty">Sin proyectos. Crea uno desde el Tracker.</div>'; return; }
+
+  let html = '';
+  state.projects.forEach(proj => {
+    const entries = state.entries.filter(e => e.projectId === proj.id);
+    const totalSec = entries.reduce((s, e) => s + e.seconds, 0);
+    const totalAmt = entries.reduce((s, e) => s + e.seconds / 3600 * e.rate, 0);
+    const pending = entries.filter(e => !e.billed).reduce((s, e) => s + e.seconds / 3600 * e.rate, 0);
+
+    // Group by task name
+    const taskMap = {};
+    entries.forEach(e => {
+      if (!taskMap[e.task]) taskMap[e.task] = [];
+      taskMap[e.task].push(e);
+    });
+
+    const taskRows = Object.entries(taskMap).map(([taskName, taskEntries]) => {
+      const dateRows = taskEntries.sort((a, b) => b.date.localeCompare(a.date)).map(e =>
+        `<div class="task-row" style="padding-left:1rem;background:var(--bg);">
+          <span class="task-name" style="font-weight:400;font-size:12px;color:var(--muted);">${e.date}</span>
+          <span style="flex:1;font-size:12px;">${e.task !== taskName ? e.task : ''}</span>
+          <span class="task-duration">${fmtSec(e.seconds)}</span>
+          <span class="task-amount">${fmtMoney(e.seconds / 3600 * e.rate, e.currency)}</span>
+          <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
+          <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
+        </div>`
+      ).join('');
+      const taskSec = taskEntries.reduce((s, e) => s + e.seconds, 0);
+      return `<div class="task-row">
+        <span class="task-name">${taskName}</span>
+        <span class="task-duration">${fmtHm(taskSec)}</span>
+        <span class="task-amount">${fmtMoney(taskEntries.reduce((s,e)=>s+e.seconds/3600*e.rate,0), proj.currency)}</span>
+        <span></span><span></span>
+      </div>${dateRows}`;
+    }).join('');
+
+    html += `<div class="project-group">
+      <div class="project-header" onclick="toggleProject('${proj.id}')">
+        <div class="project-name">
+          <span class="project-toggle" id="toggle-${proj.id}">▶</span>
+          ${proj.name}
+          <span style="font-size:12px;color:var(--muted);font-weight:400;">· ${proj.client}</span>
+        </div>
+        <div class="project-meta">
+          <span>${fmtHm(totalSec)}</span>
+          <span style="color:var(--accent);">${fmtMoney(totalAmt, proj.currency)}</span>
+          <span style="color:var(--muted);">${fmtMoney(pending, proj.currency)} pend.</span>
+          <button class="btn sm danger" onclick="event.stopPropagation();deleteProject('${proj.id}')">✕</button>
+        </div>
+      </div>
+      <div class="task-group" id="tg-${proj.id}" style="max-height:0;">
+        ${taskRows || '<div class="empty" style="padding:1rem;">Sin entradas en este proyecto.</div>'}
+      </div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function toggleProject(id) {
+  const tg = document.getElementById('tg-' + id);
+  const tog = document.getElementById('toggle-' + id);
+  if (tg.style.maxHeight === '0px' || tg.style.maxHeight === '0') {
+    tg.style.maxHeight = tg.scrollHeight + 'px';
+    tog.classList.add('open');
+  } else {
+    tg.style.maxHeight = '0';
+    tog.classList.remove('open');
+  }
+}
+
+// ─── ALL ENTRIES (manual page) ────────────────────────────────────────────────
+function renderAllEntries() {
+  const el = document.getElementById('all-entries-list');
+  if (!state.entries.length) { el.innerHTML = '<div class="empty">Sin entradas.</div>'; return; }
+  el.innerHTML = state.entries.map(e => {
+    const proj = state.projects.find(p => p.id === e.projectId);
+    return `<div class="task-row">
+      <span class="task-name">${e.task}</span>
+      <span style="font-size:11px;color:var(--muted);min-width:130px;">${proj ? proj.name : '—'}</span>
+      <span class="task-date">${e.date}</span>
+      <span class="task-duration">${fmtSec(e.seconds)}</span>
+      <span class="task-amount">${fmtMoney(e.seconds / 3600 * e.rate, e.currency)}</span>
+      <span class="badge ${e.manual ? 'billed' : 'pending'}">${e.manual ? 'manual' : 'timer'}</span>
+      <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
+      <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// ─── INVOICE SELECTOR ─────────────────────────────────────────────────────────
+function renderInvSelector() {
+  const el = document.getElementById('inv-selector');
+  const pending = state.entries.filter(e => !e.billed);
+  if (!pending.length) { el.innerHTML = '<div class="empty">No hay entradas sin facturar.</div>'; return; }
+  el.innerHTML = pending.map(e => {
+    const proj = state.projects.find(p => p.id === e.projectId);
+    return `<label class="entry-check-row">
+      <input type="checkbox" value="${e.id}" />
+      <span style="flex:1;">${e.task}</span>
+      <span style="font-size:11px;color:var(--muted);min-width:110px;">${proj ? proj.name + ' · ' + proj.client : '—'}</span>
+      <span class="task-date">${e.date}</span>
+      <span class="task-duration">${fmtSec(e.seconds)}</span>
+      <span class="task-amount">${fmtMoney(e.seconds / 3600 * e.rate, e.currency)}</span>
+    </label>`;
+  }).join('');
+}
+
+// ─── GENERATE INVOICE ─────────────────────────────────────────────────────────
+function generateInvoice() {
+  const selected = [...document.querySelectorAll('#inv-selector input:checked')].map(cb => cb.value);
+  if (!selected.length) { alert('Selecciona al menos una entrada.'); return; }
+  const items = state.entries.filter(e => selected.includes(e.id));
+  const taxPct = parseFloat(document.getElementById('inv-tax').value) || 0;
+  const subtotal = items.reduce((s, e) => s + e.seconds / 3600 * e.rate, 0);
+  const taxAmt = subtotal * taxPct / 100;
+  const total = subtotal + taxAmt;
+  const cur = items[0].currency;
+
+  const from = document.getElementById('inv-from').value || 'Tu empresa';
+  const fromD = document.getElementById('inv-from-d').value || '';
+  const to = document.getElementById('inv-to').value || 'Cliente';
+  const toD = document.getElementById('inv-to-d').value || '';
+  const num = document.getElementById('inv-num').value || ('INV-' + String(state.invCounter).padStart(3, '0'));
+  const date = document.getElementById('inv-date').value || today();
+  const due = document.getElementById('inv-due').value || '';
+  const notes = document.getElementById('inv-notes').value || '';
+
+  const rows = items.map(e => `
+    <tr>
+      <td>${e.task}</td>
+      <td>${e.date}</td>
+      <td>${fmtHm(e.seconds)}</td>
+      <td>${cur} ${e.rate.toFixed(2)}/hr</td>
+      <td>${fmtMoney(e.seconds / 3600 * e.rate, cur)}</td>
+    </tr>`).join('');
+
+  document.getElementById('inv-print-target').innerHTML = `
+    <div class="inv-preview-wrap" id="inv-content">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem;">
+        <div>
+          <div class="inv-p-title">Factura</div>
+          <div class="inv-p-num">${num}</div>
+        </div>
+        <div style="text-align:right;font-size:13px;">
+          <div style="font-weight:bold;">${date}</div>
+          ${due ? '<div style="color:#888;">Vence: ' + due + '</div>' : ''}
+        </div>
+      </div>
+      <div class="inv-p-parties">
+        <div><div class="inv-p-label">De</div><div class="inv-p-name">${from}</div><div class="inv-p-detail">${fromD}</div></div>
+        <div><div class="inv-p-label">Para</div><div class="inv-p-name">${to}</div><div class="inv-p-detail">${toD}</div></div>
+      </div>
+      <table class="inv-p-table">
+        <thead><tr><th>Descripción</th><th>Fecha</th><th>Tiempo</th><th>Tarifa</th><th style="text-align:right;">Total</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="inv-p-totals">
+        <div class="inv-p-trow"><span style="color:#888;">Subtotal</span><span>${fmtMoney(subtotal, cur)}</span></div>
+        ${taxPct > 0 ? `<div class="inv-p-trow"><span style="color:#888;">IGV/IVA (${taxPct}%)</span><span>${fmtMoney(taxAmt, cur)}</span></div>` : ''}
+        <div class="inv-p-trow total"><span>Total</span><span>${fmtMoney(total, cur)}</span></div>
+      </div>
+      ${notes ? `<div class="inv-p-notes">${notes}</div>` : ''}
+    </div>
+    <div style="display:flex;gap:10px;margin-top:1rem;justify-content:flex-end;">
+      <button class="btn primary" id="pdf-btn" onclick="downloadPDF('${num}')">⬇ Descargar PDF</button>
+      <button class="btn" onclick="window.print()">Imprimir</button>
+      <button class="btn" onclick="document.getElementById('inv-print-target').innerHTML=''">Cerrar</button>
+    </div>`;
+
+  items.forEach(e => { const en = state.entries.find(x => x.id === e.id); if (en) en.billed = true; });
+  state.invCounter++;
+  save();
+  renderInvSelector();
+  document.getElementById('inv-print-target').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ─── DOWNLOAD PDF ────────────────────────────────────────────────────────────
+async function downloadPDF(invNum) {
+  const btn = document.getElementById('pdf-btn');
+  btn.textContent = 'Generando...';
+  btn.disabled = true;
+
+  const el = document.getElementById('inv-content');
+  try {
+    const canvas = await html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false
+    });
+
+    const { jsPDF } = window.jspdf;
+    const imgData = canvas.toDataURL('image/png');
+    const pdfW = 210; // A4 mm
+    const pdfH = (canvas.height * pdfW) / canvas.width;
+    const pdf = new jsPDF({ orientation: pdfH > 297 ? 'p' : 'p', unit: 'mm', format: 'a4' });
+
+    // If content is taller than A4, split into pages
+    const pageH = 297;
+    if (pdfH <= pageH) {
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
+    } else {
+      let yOffset = 0;
+      while (yOffset < pdfH) {
+        const sliceH = Math.min(pageH, pdfH - yOffset);
+        pdf.addImage(imgData, 'PNG', 0, -yOffset, pdfW, pdfH);
+        yOffset += pageH;
+        if (yOffset < pdfH) pdf.addPage();
+      }
+    }
+
+    pdf.save('factura-' + (invNum || 'INV') + '.pdf');
+  } catch(e) {
+    alert('Error al generar PDF: ' + e.message);
+  }
+
+  btn.textContent = '⬇ Descargar PDF';
+  btn.disabled = false;
+}
+
+// ─── DELETE ───────────────────────────────────────────────────────────────────
+function deleteEntry(id) {
+  state.entries = state.entries.filter(e => e.id !== id);
+  save(); renderAll();
+}
+function deleteProject(id) {
+  if (!confirm('¿Eliminar proyecto y todas sus entradas?')) return;
+  state.projects = state.projects.filter(p => p.id !== id);
+  state.entries = state.entries.filter(e => e.projectId !== id);
+  save(); renderAll();
+}
+
+// ─── NAV ──────────────────────────────────────────────────────────────────────
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector(`[onclick="nav('${page}')"]`).classList.add('active');
+  if (page === 'proyectos') renderProjectTree();
+  if (page === 'manual') { renderAllEntries(); syncProjectSelects(); }
+  if (page === 'facturas') { renderInvSelector(); syncProjectSelects(); }
+}
+
+// ─── RENDER ALL ───────────────────────────────────────────────────────────────
+function renderAll() {
+  syncProjectSelects();
+  renderRecent();
+  updateStats();
+  renderProjectTree();
+  renderAllEntries();
+  renderInvSelector();
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+document.getElementById('inv-num').value = 'INV-' + String(state.invCounter).padStart(3, '0');
+document.getElementById('inv-date').value = today();
+const due = new Date(); due.setDate(due.getDate() + 15);
+document.getElementById('inv-due').value = due.toISOString().slice(0, 10);
+document.getElementById('m-date').value = today();
+
+renderAll();
+restoreTimer();
+</script>
+</body>
+</html>
