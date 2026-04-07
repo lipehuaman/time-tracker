@@ -293,9 +293,12 @@ input[type="checkbox"] {
 
       <div class="timer-row">
         <label class="field">Proyecto
-          <select id="t-project" onchange="syncTaskSelect()">
-            <option value="">— nuevo proyecto —</option>
-          </select>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <select id="t-project" onchange="syncTaskSelect()" style="flex:1;">
+              <option value="">— seleccionar proyecto —</option>
+            </select>
+            <button class="btn sm" onclick="showNewProjForm()" title="Nuevo proyecto" style="flex-shrink:0;padding:9px 12px;font-weight:600;">+</button>
+          </div>
         </label>
         <label class="field">Tarea
           <input type="text" id="t-task" placeholder="Descripción de la tarea..." />
@@ -543,7 +546,7 @@ function syncProjectSelects() {
     const cur = sel.value;
     const isTracker = id === 't-project';
     sel.innerHTML = isTracker
-      ? '<option value="">— nuevo proyecto —</option>'
+      ? '<option value="">— seleccionar proyecto —</option>'
       : '<option value="">— seleccionar —</option>';
     state.projects.forEach(p => {
       const opt = document.createElement('option');
@@ -557,9 +560,7 @@ function syncProjectSelects() {
 
 function syncTaskSelect() {
   const projId = document.getElementById('t-project').value;
-  if (!projId) {
-    document.getElementById('new-proj-row').style.display = 'block';
-  } else {
+  if (projId) {
     document.getElementById('new-proj-row').style.display = 'none';
     const proj = state.projects.find(p => p.id === projId);
     if (proj) {
@@ -567,6 +568,12 @@ function syncTaskSelect() {
       if (proj.currency) document.getElementById('t-currency').value = proj.currency;
     }
   }
+}
+
+function showNewProjForm() {
+  const row = document.getElementById('new-proj-row');
+  row.style.display = row.style.display === 'block' ? 'none' : 'block';
+  if (row.style.display === 'block') document.getElementById('new-proj-name').focus();
 }
 
 function createProject() {
@@ -656,6 +663,7 @@ function renderRecent() {
       <span class="task-duration">${fmtSec(secs)}</span>
       <span class="task-amount">${fmtMoney(secs / 3600 * e.rate, e.currency)}</span>
       <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
+      <button class="btn sm" onclick="openEditEntry('${e.id}')">✏</button>
       <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
     </div>`;
   }).join('');
@@ -748,6 +756,7 @@ function renderAllEntries() {
       <span class="task-amount">${fmtMoney(e.seconds / 3600 * e.rate, e.currency)}</span>
       <span class="badge ${e.manual ? 'billed' : 'pending'}">${e.manual ? 'manual' : 'timer'}</span>
       <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
+      <button class="btn sm" onclick="openEditEntry('${e.id}')">✏</button>
       <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
     </div>`;
   }).join('');
@@ -882,6 +891,79 @@ async function downloadPDF(invNum) {
 
   btn.textContent = '⬇ Descargar PDF';
   btn.disabled = false;
+}
+
+// ─── EDIT ENTRY ──────────────────────────────────────────────────────────────
+function openEditEntry(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+
+  // Remove existing modal if any
+  const existing = document.getElementById('edit-modal');
+  if (existing) existing.remove();
+
+  const projOptions = state.projects.map(p =>
+    `<option value="${p.id}" ${p.id === e.projectId ? 'selected' : ''}>${p.name} · ${p.client}</option>`
+  ).join('');
+
+  const h = Math.floor(e.seconds / 3600);
+  const m = Math.floor((e.seconds % 3600) / 60);
+
+  const modal = document.createElement('div');
+  modal.id = 'edit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:999;';
+  modal.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:1.5rem;width:520px;max-width:95vw;">
+      <div style="font-size:15px;font-weight:600;margin-bottom:1rem;">Editar entrada</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <label class="field" style="grid-column:1/-1;">Tarea
+          <input type="text" id="edit-task" value="${e.task}" />
+        </label>
+        <label class="field">Proyecto
+          <select id="edit-project">
+            <option value="">— sin proyecto —</option>
+            ${projOptions}
+          </select>
+        </label>
+        <label class="field">Fecha
+          <input type="date" id="edit-date" value="${e.date}" />
+        </label>
+        <label class="field">Horas
+          <input type="number" id="edit-hours" value="${h}" min="0" max="24" />
+        </label>
+        <label class="field">Minutos
+          <input type="number" id="edit-minutes" value="${m}" min="0" max="59" />
+        </label>
+        <label class="field">Tarifa/hr
+          <input type="number" id="edit-rate" value="${e.rate}" min="0" />
+        </label>
+        <label class="field">Moneda
+          <select id="edit-currency">
+            ${['USD','PEN','EUR','MXN'].map(c=>`<option ${c===e.currency?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;">
+        <button class="btn sm" onclick="document.getElementById('edit-modal').remove()">Cancelar</button>
+        <button class="btn sm primary" onclick="saveEditEntry('${id}')">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', ev => { if (ev.target === modal) modal.remove(); });
+}
+
+function saveEditEntry(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!e) return;
+  e.task     = document.getElementById('edit-task').value.trim() || e.task;
+  e.projectId= document.getElementById('edit-project').value || null;
+  e.date     = document.getElementById('edit-date').value || e.date;
+  e.seconds  = Math.round((parseFloat(document.getElementById('edit-hours').value)||0)*3600 + (parseFloat(document.getElementById('edit-minutes').value)||0)*60);
+  e.rate     = parseFloat(document.getElementById('edit-rate').value) || 0;
+  e.currency = document.getElementById('edit-currency').value;
+  save();
+  document.getElementById('edit-modal').remove();
+  renderAll();
 }
 
 // ─── DELETE ───────────────────────────────────────────────────────────────────
