@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>TimeTrack — Tracker & Facturas</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -278,7 +279,20 @@ input[type="checkbox"] {
     <button class="nav-item" onclick="nav('facturas')">
       <span class="nav-icon">🧾</span> Facturas
     </button>
-    <div class="sidebar-footer">Datos en localStorage · v1.0</div>
+    <div class="sidebar-footer">
+      <div id="drive-status" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:12px;color:var(--muted);">
+        <span id="drive-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted2);flex-shrink:0;"></span>
+        <span id="drive-label">Sin conectar</span>
+      </div>
+      <button id="drive-btn" class="btn sm" onclick="driveConnect()" style="width:100%;font-size:12px;margin-bottom:6px;">Conectar Google Drive</button>
+      <div style="display:flex;gap:6px;">
+        <button class="btn sm" onclick="exportData()" style="flex:1;font-size:11px;">⬇ JSON</button>
+        <label class="btn sm" style="flex:1;font-size:11px;cursor:pointer;text-align:center;padding:6px 8px;">
+          ⬆ JSON
+          <input type="file" accept=".json" onchange="importData(event)" style="display:none;" />
+        </label>
+      </div>
+    </div>
   </aside>
 
   <!-- MAIN -->
@@ -432,7 +446,141 @@ let state = JSON.parse(localStorage.getItem('tt_state') || 'null') || {
   invCounter: 1
 };
 
-function save() { localStorage.setItem('tt_state', JSON.stringify(state)); }
+// ─── GOOGLE DRIVE SYNC ───────────────────────────────────────────────────────
+const CLIENT_ID = '109763654068-4k2rot3k2n6p7vfo6tvm7uiu9dr6e4ap.apps.googleusercontent.com';
+const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const FILENAME = 'timetrack-data.json';
+let driveToken = null;
+let driveFileId = localStorage.getItem('tt_drive_file_id') || null;
+let saveTimeout = null;
+
+function driveConnect() {
+  const client = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPE,
+    callback: (resp) => {
+      if (resp.error) { setDriveStatus('error'); return; }
+      driveToken = resp.access_token;
+      setDriveStatus('conectado');
+      document.getElementById('drive-btn').textContent = 'Drive conectado ✓';
+      document.getElementById('drive-btn').disabled = true;
+      driveSave();
+    }
+  });
+  client.requestAccessToken();
+}
+
+function setDriveStatus(s) {
+  const dot = document.getElementById('drive-dot');
+  const label = document.getElementById('drive-label');
+  if (s === 'conectado')  { dot.style.background = '#4a4'; label.textContent = 'Drive conectado'; }
+  else if (s === 'saving') { dot.style.background = '#aa4'; label.textContent = 'Guardando...'; }
+  else if (s === 'saved')  { dot.style.background = '#4a4'; label.textContent = 'Guardado en Drive'; }
+  else if (s === 'error')  { dot.style.background = '#c00'; label.textContent = 'Error al guardar'; }
+  else                     { dot.style.background = 'var(--muted2)'; label.textContent = 'Sin conectar'; }
+}
+
+async function getOrCreateFolder() {
+  // Search for existing TimeTrack folder
+  const search = await fetch(
+    "https://www.googleapis.com/drive/v3/files?q=name%3D'TimeTrack'+and+mimeType%3D'application%2Fvnd.google-apps.folder'+and+trashed%3Dfalse&fields=files(id,name)", {
+    headers: { 'Authorization': 'Bearer ' + driveToken }
+  });
+  const result = await search.json();
+  if (result.files && result.files.length > 0) {
+    return result.files[0].id;
+  }
+  // Create folder
+  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + driveToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'TimeTrack', mimeType: 'application/vnd.google-apps.folder' })
+  });
+  const folder = await res.json();
+  return folder.id;
+}
+
+async function driveSave() {
+  if (!driveToken) return;
+  setDriveStatus('saving');
+  const content = JSON.stringify(state, null, 2);
+
+  try {
+    if (driveFileId) {
+      // Update existing file content
+      await fetch('https://www.googleapis.com/upload/drive/v3/files/' + driveFileId + '?uploadType=media', {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + driveToken, 'Content-Type': 'application/json' },
+        body: content
+      });
+    } else {
+      // Get or create TimeTrack folder, then create file inside it
+      const folderId = await getOrCreateFolder();
+      localStorage.setItem('tt_drive_folder_id', folderId);
+      const blob = new Blob([content], { type: 'application/json' });
+      const meta = { name: FILENAME, mimeType: 'application/json', parents: [folderId] };
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+      form.append('file', blob);
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + driveToken },
+        body: form
+      });
+      const data = await res.json();
+      driveFileId = data.id;
+      localStorage.setItem('tt_drive_file_id', driveFileId);
+    }
+    setDriveStatus('saved');
+  } catch(e) {
+    setDriveStatus('error');
+    console.error('Drive save error:', e);
+  }
+}
+
+function save() {
+  localStorage.setItem('tt_state', JSON.stringify(state));
+  // Debounce drive saves — wait 2s after last change
+  if (driveToken) {
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(driveSave, 2000);
+  }
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = 'timetrack-backup-' + date + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const imported = JSON.parse(e.target.result);
+      if (!imported.entries || !imported.projects) {
+        alert('Archivo inválido. Asegúrate de importar un backup de TimeTrack.');
+        return;
+      }
+      if (!confirm('¿Cargar este backup? Se reemplazarán los datos actuales (' + state.entries.length + ' entradas).')) return;
+      state = imported;
+      save();
+      renderAll();
+      alert('✓ Datos importados: ' + state.entries.length + ' entradas, ' + state.projects.length + ' proyectos.');
+    } catch(err) {
+      alert('Error al leer el archivo: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
