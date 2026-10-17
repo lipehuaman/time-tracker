@@ -256,3 +256,41 @@ test('first sync keeps a downloadable original local copy and a separate origina
   assert.equal(app.local.get('tt_before_sync_v1_alice'), JSON.stringify(backup));
   assert.equal(server.account('alice').filter(file => file.name === 'timetrack-respaldo-original.json').length, 1);
 });
+
+test('invoice snapshots synchronize, survive edits to source entries, and propagate cancellation', async () => {
+  const server = drive();
+  const first = browser(server, data([entry('e1')]));
+  await first.connect();
+  first.edit(`
+    state.invoices.push({id:'i1',num:'INV-001',date:'2026-10-17',due:'',taxPct:18,from:'Lipe',fromD:'',to:'Cliente',toD:'',notes:'',currency:'USD',status:'issued',items:JSON.parse(JSON.stringify(state.entries))});
+    state.entries[0].billed=true;state.entries[0].invoiceId='i1';state.invCounter=2;
+  `);
+  await first.sync();
+  const second=browser(server);
+  await second.connect();
+  assert.equal(second.state().invoices[0].items[0].seconds,120);
+  assert.equal(second.state().invCounter,2);
+  first.edit(`state.entries[0].seconds=600;`);
+  await first.sync();await second.sync();
+  assert.equal(second.state().invoices[0].items[0].seconds,120);
+  assert.equal(second.state().entries[0].seconds,600);
+  second.edit(`state.invoices[0].status='void';state.entries[0].billed=false;delete state.entries[0].invoiceId;`);
+  await second.sync();await first.sync();
+  assert.equal(first.state().invoices[0].status,'void');
+  assert.equal(first.state().entries[0].billed,false);
+});
+
+test('malformed backup identifiers, money, dates and invoices are rejected before replacing data', () => {
+  const app=browser(drive());
+  for(const mutation of [
+    "value.entries[0].id=\"e' onclick='bad\"",
+    'value.entries[0].rate=-1',
+    "value.entries[0].date='2026-02-30'",
+    "value.projects[0].currency='<script>'",
+    "value.invoices='bad'",
+    "value.invCounter=Infinity"
+  ]) {
+    const input=JSON.stringify(data([entry('e1')]));
+    assert.equal(app.run(`(() => {const value=${input};${mutation};try{normalizeState(value);return false;}catch{return true;}})()`),true);
+  }
+});

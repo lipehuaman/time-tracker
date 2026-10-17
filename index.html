@@ -75,7 +75,7 @@ body {
   font-size: 11px; color: var(--muted2);
 }
 
-.main { padding: 2rem 2.5rem; max-width: 960px; }
+.main { min-width: 0; width: 100%; padding: 2rem 2.5rem; max-width: 960px; }
 .page { display: none; }
 .page.active { display: block; }
 
@@ -99,7 +99,7 @@ input, select, textarea {
 }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 input::placeholder { color: var(--muted2); }
-select option { background: #222; }
+select option { background: var(--surface); color: var(--text); }
 label.field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
 
 /* BUTTONS */
@@ -242,20 +242,45 @@ input[type="checkbox"] {
 
 @media (max-width: 720px) {
   .shell { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; flex-direction: row; padding: 0.75rem; overflow-x: auto; }
+  .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; padding: 0.75rem; }
+  .nav-item { width: auto; flex: 1 0 auto; padding: 9px; }
   .logo { display: none; }
-  .sidebar-footer { display: none; }
+  .sidebar-footer { display: block; width: 100%; padding: 0.75rem; }
+  .sidebar-footer p { margin-bottom: 6px; }
+  .task-row, .entry-check-row, .project-header, .project-meta { flex-wrap: wrap; }
+  .task-name { min-width: 120px; overflow-wrap: anywhere; }
+  .new-project-fields { flex-wrap: wrap; }
+  .inv-preview-wrap { padding: 1rem; overflow-x: auto; }
+  .inv-p-table td, .inv-p-table th { font-size: 10px; padding: 6px 3px; }
+  .invoice-actions { flex-wrap: wrap; }
   .stats { grid-template-columns: 1fr 1fr; }
   .timer-row { grid-template-columns: 1fr 1fr; }
   .manual-row { grid-template-columns: 1fr 1fr; }
   .inv-grid { grid-template-columns: 1fr; }
-  .main { padding: 1rem; }
+  .main { min-width: 0; width: 100%; padding: 1rem; }
 }
 
+[hidden] { display: none !important; }
+.entry-project { font-size: 11px; color: var(--muted); min-width: 110px; overflow-wrap: anywhere; }
+.stat-value { overflow-wrap: anywhere; }
+#stat-pending { font-size: 18px; }
+.project-open { border: none; background: transparent; color: inherit; font-family: inherit; text-align: left; cursor: pointer; }
+.project-client { font-size: 12px; font-weight: 400; color: var(--muted); }
+.invoice-heading { display: flex; justify-content: space-between; gap: 1rem; }
+.invoice-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 1rem; }
+.modal-overlay { position: fixed; inset: 0; background: #0006; display: flex; align-items: center; justify-content: center; z-index: 999; padding: 1rem; }
+.edit-dialog { background: var(--surface); border: 1px solid var(--border2); border-radius: var(--radius); padding: 1.5rem; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+#app-notice { background: var(--red-dim); border: 1px solid var(--red); padding: 1rem; margin-bottom: 1rem; border-radius: var(--radius-sm); font-size: 13px; }
+.inv-p-table td, .inv-p-name, .inv-p-detail, .inv-p-notes { overflow-wrap: anywhere; }
 @media print {
-  .shell { display: block; }
-  .sidebar, .main > *:not(#inv-print-target) { display: none !important; }
-  .inv-preview-wrap { border: none; box-shadow: none; padding: 0; }
+  @page { size: A4; margin: 12mm; }
+  body { background: white; }
+  .shell, .main, #page-facturas { display: block !important; max-width: none; width: 100%; padding: 0; }
+  .sidebar, #app-notice, .page:not(#page-facturas), #page-facturas > :not(#inv-print-target), .invoice-actions, #edit-modal { display: none !important; }
+  #inv-print-target { display: block !important; }
+  .inv-preview-wrap { margin: 0; border: none; box-shadow: none; padding: 0; overflow: visible; }
+  .inv-p-table thead { display: table-header-group; }
+  .inv-p-table tr, .inv-p-totals { break-inside: avoid; }
 }
 </style>
 </head>
@@ -301,6 +326,7 @@ input[type="checkbox"] {
 
   <!-- MAIN -->
   <main class="main">
+    <div id="app-notice" role="alert" hidden></div>
 
     <!-- TRACKER -->
     <div id="page-tracker" class="page active">
@@ -322,7 +348,7 @@ input[type="checkbox"] {
           <input type="text" id="t-task" placeholder="Descripción de la tarea..." />
         </label>
         <label class="field">Tarifa/hr
-          <input type="number" id="t-rate" placeholder="50" min="0" />
+          <input type="number" id="t-rate" placeholder="50" min="0" step="0.01" />
         </label>
         <label class="field">Moneda
           <select id="t-currency">
@@ -337,7 +363,7 @@ input[type="checkbox"] {
       <!-- New project inline -->
       <div id="new-proj-row" style="display:none;margin-bottom:1.5rem;">
         <label class="field">Nombre del nuevo proyecto
-          <div style="display:flex;gap:8px;">
+          <div class="new-project-fields" style="display:flex;gap:8px;">
             <input type="text" id="new-proj-name" placeholder="Ej: Rediseño web Bonkar" style="flex:1;" />
             <input type="text" id="new-proj-client" placeholder="Cliente" style="flex:1;" />
             <button class="btn sm" onclick="createProject()">Crear</button>
@@ -375,7 +401,7 @@ input[type="checkbox"] {
         <div class="card-title">Nueva entrada</div>
         <div class="manual-row">
           <label class="field">Proyecto
-            <select id="m-project">
+            <select id="m-project" onchange="syncTaskSelect('m-project')">
               <option value="">— seleccionar —</option>
             </select>
           </label>
@@ -386,13 +412,13 @@ input[type="checkbox"] {
             <input type="date" id="m-date" />
           </label>
           <label class="field">Horas
-            <input type="number" id="m-hours" placeholder="2" min="0" max="24" step="0.25" />
+            <input type="number" id="m-hours" placeholder="2" min="0" max="99999" step="0.25" />
           </label>
           <label class="field">Minutos
             <input type="number" id="m-minutes" placeholder="30" min="0" max="59" />
           </label>
           <label class="field">Tarifa/hr
-            <input type="number" id="m-rate" placeholder="50" min="0" />
+            <input type="number" id="m-rate" placeholder="50" min="0" step="0.01" />
           </label>
           <label class="field">&nbsp;
             <button class="btn primary" onclick="addManual()">Agregar</button>
@@ -436,6 +462,7 @@ input[type="checkbox"] {
       </div>
 
       <div id="inv-print-target"></div>
+      <div class="card" style="margin-top:1.5rem;"><div class="card-title">Historial de facturas</div><div id="invoice-history"></div></div>
     </div>
 
   </main>
@@ -444,37 +471,69 @@ input[type="checkbox"] {
 <script>
 // ─── STATE ───────────────────────────────────────────────────────────────────
 function emptyState() {
-  return { projects: [], entries: [], timer: null, invCounter: 1 };
+  return { projects: [], entries: [], invoices: [], timer: null, invCounter: 1 };
 }
 
 function normalizeState(value) {
-  if (!value || !Array.isArray(value.projects) || !Array.isArray(value.entries)) {
-    throw new Error('El archivo no contiene datos válidos de TimeTrack.');
-  }
-  for (const items of [value.projects, value.entries]) {
+  const invalid = message => { throw new Error(message || 'El archivo no contiene datos válidos de TimeTrack.'); };
+  if (!value || !Array.isArray(value.projects) || !Array.isArray(value.entries) || (value.invoices !== undefined && !Array.isArray(value.invoices))) invalid();
+  const currencies = ['USD', 'PEN', 'EUR', 'MXN'];
+  const validId = id => typeof id === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,199}$/.test(id) && !Object.hasOwn(Object.prototype, id);
+  const validateIds = items => {
     const ids = new Set();
     for (const item of items) {
-      if (!item || typeof item.id !== 'string' || ids.has(item.id)) {
-        throw new Error('Hay registros inválidos o duplicados en el archivo.');
-      }
+      if (!item || !validId(item.id) || ids.has(item.id)) invalid('Hay registros inválidos o duplicados en el archivo.');
       ids.add(item.id);
     }
+  };
+  const validateEntry = entry => {
+    if (typeof entry.task !== 'string' || !validDate(entry.date) || !Number.isFinite(entry.seconds) || entry.seconds < 0 ||
+        !Number.isFinite(entry.rate) || entry.rate < 0 || !currencies.includes(entry.currency) ||
+        (entry.projectId != null && !validId(entry.projectId)) || (entry.invoiceId != null && !validId(entry.invoiceId)) ||
+        (entry._baseSec !== undefined && (!Number.isFinite(entry._baseSec) || entry._baseSec < 0))) invalid('Hay tiempos, tarifas o fechas inválidos en el archivo.');
+  };
+  const invoices = value.invoices || [];
+  [value.projects, value.entries, invoices].forEach(validateIds);
+  for (const project of value.projects) {
+    if (typeof project.name !== 'string' || typeof project.client !== 'string' || !currencies.includes(project.currency) || !Number.isFinite(project.rate) || project.rate < 0) invalid('Hay proyectos inválidos en el archivo.');
   }
-  for (const entry of value.entries) {
-    if (!Number.isFinite(entry.seconds) || entry.seconds < 0 || typeof entry.task !== 'string' || typeof entry.date !== 'string') {
-      throw new Error('Hay tiempos inválidos en el archivo.');
+  value.entries.forEach(validateEntry);
+  for (const invoice of invoices) {
+    if (!Array.isArray(invoice.items) || !invoice.items.length || !['issued', 'void'].includes(invoice.status) ||
+        !Number.isFinite(invoice.taxPct) || invoice.taxPct < 0 || invoice.taxPct > 100 || !currencies.includes(invoice.currency) ||
+        !validDate(invoice.date) || (invoice.due && (!validDate(invoice.due) || invoice.due < invoice.date)) ||
+        !['num', 'from', 'fromD', 'to', 'toD', 'notes'].every(key => typeof invoice[key] === 'string')) invalid('Hay facturas inválidas en el archivo.');
+    validateIds(invoice.items); invoice.items.forEach(validateEntry);
+    if (invoice.items.some(entry => entry.currency !== invoice.currency)) invalid('Hay facturas que mezclan monedas.');
+  }
+  const counter = value.invCounter === undefined ? 1 : value.invCounter;
+  if (!Number.isSafeInteger(counter) || counter < 1) invalid('El contador de facturas no es válido.');
+  const meta = value._sync || {}, sync = {};
+  for (const collection of ['projects', 'entries', 'invoices']) {
+    sync[collection] = {};
+    for (const [id, revision] of Object.entries(meta[collection] || {})) {
+      if (!validId(id) || typeof revision !== 'string' || !/^\d{16}:[a-zA-Z0-9:_-]+$/.test(revision)) invalid('Las versiones del respaldo no son válidas.');
+      sync[collection][id] = revision;
     }
   }
-  const result = { ...value, invCounter: Math.max(1, Number(value.invCounter) || 1) };
-  result.timer = value.timer && Number.isFinite(value.timer.startTs) &&
-    value.entries.some(e => e.id === value.timer.entryId) ? value.timer : null;
-  const meta = value._sync || {};
-  result._sync = {
-    projects: { ...(meta.projects || {}) },
-    entries: { ...(meta.entries || {}) },
-    timer: typeof meta.timer === 'string' ? meta.timer : ''
-  };
-  return result;
+  sync.timer = typeof meta.timer === 'string' ? meta.timer : '';
+  if (sync.timer && !/^\d{16}:[a-zA-Z0-9:_-]+$/.test(sync.timer)) invalid('La versión del cronómetro no es válida.');
+  const timer = value.timer && Number.isFinite(value.timer.startTs) && value.timer.startTs > 0 && value.entries.some(e => e.id === value.timer.entryId) ? value.timer : null;
+  return { projects: value.projects, entries: value.entries, invoices, timer, invCounter: counter, _sync: sync };
+}
+
+let recoveryData = null;
+let localWriteFailed = false;
+function showDataNotice(message) {
+  const notice = document.getElementById('app-notice');
+  notice.hidden = false;
+  notice.textContent = message;
+  if (recoveryData) {
+    const button = document.createElement('button');
+    button.className = 'btn sm'; button.textContent = 'Descargar datos originales';
+    button.onclick = () => downloadText(recoveryData, 'timetrack-recuperacion');
+    notice.appendChild(button);
+  }
 }
 
 function readLocalState(key = 'tt_state') {
@@ -484,7 +543,8 @@ function readLocalState(key = 'tt_state') {
   } catch (error) {
     // Keep the original bytes so a broken local copy can still be recovered.
     const raw = localStorage.getItem(key);
-    if (raw) localStorage.setItem('tt_recovery_' + Date.now(), raw);
+    recoveryData = raw;
+    if (raw) { try { localStorage.setItem('tt_recovery_' + Date.now(), raw); } catch {} }
     console.error('No se pudo leer el respaldo local:', error);
     return normalizeState(emptyState());
   }
@@ -492,19 +552,22 @@ function readLocalState(key = 'tt_state') {
 
 let state = readLocalState();
 let previousState = JSON.parse(JSON.stringify(state));
+let activeOwner = localStorage.getItem('tt_drive_owner');
+let accountChangedElsewhere = false;
 const deviceId = localStorage.getItem('tt_device_id') || crypto.randomUUID();
-localStorage.setItem('tt_device_id', deviceId);
+const sessionId = crypto.randomUUID();
+try { localStorage.setItem('tt_device_id', deviceId); } catch { localWriteFailed = true; }
 let lastRevision = 0;
 
 function nextRevision() {
-  const known = [state._sync.timer, ...Object.values(state._sync.projects), ...Object.values(state._sync.entries)];
+  const known = [state._sync.timer, ...Object.values(state._sync.projects), ...Object.values(state._sync.entries), ...Object.values(state._sync.invoices)];
   lastRevision = known.reduce((latest, value) => Math.max(latest, (parseInt(value, 10) || 0) + 1), Math.max(Date.now(), lastRevision + 1));
-  return String(lastRevision).padStart(16, '0') + ':' + deviceId;
+  return String(lastRevision).padStart(16, '0') + ':' + deviceId + ':' + sessionId;
 }
 
 function recordChanges() {
   const revision = nextRevision();
-  for (const collection of ['projects', 'entries']) {
+  for (const collection of ['projects', 'entries', 'invoices']) {
     const before = new Map(previousState[collection].map(item => [item.id, item]));
     const after = new Map(state[collection].map(item => [item.id, item]));
     for (const id of new Set([...before.keys(), ...after.keys()])) {
@@ -519,12 +582,12 @@ function recordChanges() {
 
 function mergeStates(local, remote) {
   const merged = normalizeState(emptyState());
-  for (const collection of ['projects', 'entries']) {
+  for (const collection of ['projects', 'entries', 'invoices']) {
     const a = new Map(local[collection].map(item => [item.id, item]));
     const b = new Map(remote[collection].map(item => [item.id, item]));
     const av = local._sync[collection], bv = remote._sync[collection];
     const ids = new Set([...a.keys(), ...b.keys(), ...Object.keys(av), ...Object.keys(bv)]);
-    for (const id of ids) {
+    for (const id of [...ids].sort()) {
       const left = av[id] || '', right = bv[id] || '';
       // Drive wins ties for old files without revisions; unique local records survive.
       const source = left > right ? a : right > left ? b : b.has(id) ? b : a;
@@ -532,6 +595,7 @@ function mergeStates(local, remote) {
       if (left || right) merged._sync[collection][id] = left > right ? left : right;
     }
   }
+  merged.invoices.sort((a, b) => b.id.localeCompare(a.id));
   merged.entries.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
   let timerSource = local._sync.timer > remote._sync.timer ? local : remote;
   if (!local._sync.timer && !remote._sync.timer && local.timer &&
@@ -543,11 +607,28 @@ function mergeStates(local, remote) {
 }
 
 function persistLocal() {
+  if (accountChangedElsewhere || localStorage.getItem('tt_drive_owner') !== activeOwner) {
+    accountChangedElsewhere = true;
+    showDataNotice('La cuenta cambió en otra pestaña. Descarga un JSON de esta pestaña si hay cambios pendientes y recarga antes de continuar.');
+    throw new Error('Recarga esta pestaña después del cambio de cuenta.');
+  }
+  if (recoveryData) {
+    showDataNotice('No pudimos leer tus datos originales. Descarga la copia de recuperación; importa un respaldo válido antes de continuar.');
+    throw new Error('Los datos originales necesitan recuperarse antes de guardar o sincronizar.');
+  }
   const content = JSON.stringify(state);
-  localStorage.setItem('tt_state', content);
-  const owner = localStorage.getItem('tt_drive_owner');
-  if (owner) localStorage.setItem('tt_account_' + owner, content);
-  previousState = JSON.parse(content);
+  try {
+    localStorage.setItem('tt_state', content);
+    const owner = localStorage.getItem('tt_drive_owner');
+    if (owner) localStorage.setItem('tt_account_' + owner, content);
+    previousState = JSON.parse(content);
+    localWriteFailed = false;
+    document.getElementById('app-notice').hidden = true;
+  } catch (error) {
+    localWriteFailed = true;
+    showDataNotice('El navegador no pudo guardar tus últimos cambios. Mantén esta página abierta y descarga un respaldo con JSON antes de cerrar.');
+    throw error;
+  }
 }
 
 function preSyncBackupKey() {
@@ -579,6 +660,7 @@ let saveTimeout = null;
 let syncPromise = null;
 let syncAgain = false;
 let driveConnecting = false;
+let driveSession = 0;
 
 function setDriveStatus(status, detail) {
   const states = {
@@ -603,6 +685,7 @@ function setDriveStatus(status, detail) {
 }
 
 function expireDriveToken() {
+  driveSession++;
   driveToken = null;
   clearTimeout(tokenExpiryTimeout);
   setDriveStatus('expired');
@@ -613,12 +696,14 @@ async function driveRequest(url, options = {}) {
     expireDriveToken();
     throw new Error('La sesión de Google venció. Vuelve a conectar Drive.');
   }
+  const requestSession = driveSession;
   const response = await fetch(url, {
     ...options,
     cache: 'no-store',
     headers: { ...options.headers, Authorization: 'Bearer ' + driveToken },
     signal: AbortSignal.timeout(30000)
   });
+  if (requestSession !== driveSession) throw new Error('La sesión de Google cambió. Vuelve a sincronizar.');
   if (response.status === 401) expireDriveToken();
   if (!response.ok) {
     const error = new Error('Google Drive respondió con error ' + response.status + '. Los datos siguen guardados en esta computadora.');
@@ -629,6 +714,7 @@ async function driveRequest(url, options = {}) {
 }
 
 function driveConnect(changeAccount = false) {
+  if (accountChangedElsewhere) { showDataNotice('La cuenta cambió en otra pestaña. Descarga un JSON si tienes cambios pendientes y recarga esta página.'); return; }
   if (driveConnecting) return;
   if (driveToken && !changeAccount) { driveSync(); return; }
   if (!window.google?.accounts?.oauth2) {
@@ -654,6 +740,7 @@ function driveConnect(changeAccount = false) {
         // Finish any in-flight synchronization before changing credentials/account.
         if (syncPromise) await syncPromise;
         driveToken = resp.access_token;
+        driveSession++;
         tokenExpiresAt = Date.now() + (Number(resp.expires_in) || 3600) * 1000 - 30000;
         clearTimeout(tokenExpiryTimeout);
         tokenExpiryTimeout = setTimeout(expireDriveToken, Math.max(0, tokenExpiresAt - Date.now()));
@@ -668,6 +755,7 @@ function driveConnect(changeAccount = false) {
           renderSyncedState();
         }
         localStorage.setItem('tt_drive_owner', user.permissionId);
+        activeOwner = user.permissionId;
         persistLocal();
         document.getElementById('drive-account').textContent = user.emailAddress || 'Cuenta de Google conectada';
         driveFileId = null;
@@ -729,6 +817,7 @@ function renderSyncedState(previousCounter) {
 }
 
 async function performDriveSync() {
+  const syncSession = driveSession;
   setDriveStatus('syncing');
   try {
     // Preserve the original local history before applying any remote changes.
@@ -751,6 +840,7 @@ async function performDriveSync() {
       }
     }
     // Include edits made while the network requests were in progress.
+    if (syncSession !== driveSession) return;
     const previousContent = JSON.stringify(state);
     const previousCounter = state.invCounter;
     state = mergeStates(state, merged);
@@ -824,10 +914,31 @@ document.addEventListener('visibilitychange', () => {
   if (driveToken) { clearTimeout(saveTimeout); driveSync(); }
 });
 window.addEventListener('beforeunload', event => {
-  if (driveToken && (saveTimeout || syncPromise)) {
+  if (localWriteFailed || (driveToken && (saveTimeout || syncPromise))) {
     event.preventDefault();
     event.returnValue = '';
   }
+});
+
+window.addEventListener('storage', event => {
+  if (event.key === 'tt_drive_owner' && event.newValue !== activeOwner) {
+    accountChangedElsewhere = true;
+    expireDriveToken();
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    showDataNotice('La cuenta cambió en otra pestaña. Descarga un JSON de esta pestaña si hay cambios pendientes y recarga antes de continuar.');
+    return;
+  }
+  if (event.key !== 'tt_state' || !event.newValue || accountChangedElsewhere || recoveryData) return;
+  try {
+    const before = JSON.stringify(state), previousCounter = state.invCounter;
+    state = mergeStates(state, normalizeState(JSON.parse(event.newValue)));
+    if (JSON.stringify(state) !== before) {
+      persistLocal();
+      renderSyncedState(previousCounter);
+      if (driveToken) driveSync();
+    }
+  } catch (error) { showDataNotice('No se pudieron combinar los cambios de otra pestaña. Descarga un JSON antes de recargar.'); }
 });
 
 function exportData() {
@@ -835,7 +946,11 @@ function exportData() {
 }
 
 function downloadData(data, prefix) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  downloadText(JSON.stringify(data, null, 2), prefix);
+}
+
+function downloadText(content, prefix) {
+  const blob = new Blob([content], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
@@ -854,6 +969,8 @@ function importData(event) {
       const imported = normalizeState(JSON.parse(e.target.result));
       if (!confirm('¿Cargar este backup? Se reemplazarán los datos actuales (' + state.entries.length + ' entradas).')) return;
       // Treat imported records as explicit edits in the current account.
+      if (!recoveryData) localStorage.setItem('tt_before_import_' + Date.now(), JSON.stringify(state));
+      recoveryData = null;
       state = { ...imported, _sync: state._sync };
       save();
       renderSyncedState();
@@ -866,96 +983,62 @@ function importData(event) {
   event.target.value = '';
 }
 
-function today() { return new Date().toISOString().slice(0, 10); }
-
+function localDate(date = new Date()) {
+  return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+}
+function today() { return localDate(); }
+function validDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(value + 'T12:00:00');
+  return !Number.isNaN(date.getTime()) && localDate(date) === value;
+}
 function pad(n) { return String(n).padStart(2, '0'); }
-function fmtSec(s) {
-  s = Math.round(s);
+function fmtSec(seconds) {
+  const s = Math.max(0, Math.round(seconds));
   return pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s % 3600 / 60)) + ':' + pad(s % 60);
 }
-function fmtHm(s) {
-  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
-  return h + 'h ' + m + 'm';
+function fmtHm(s) { return Math.floor(s / 3600) + 'h ' + Math.floor(s % 3600 / 60) + 'm'; }
+function fmtMoney(n, cur = 'USD') { return cur + ' ' + n.toFixed(2); }
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
-function fmtMoney(n, cur) { return (cur || 'USD') + ' ' + n.toFixed(2); }
+function readNumber(id, min = 0, max = Number.MAX_SAFE_INTEGER, fallback = 0) {
+  const input = document.getElementById(id);
+  const value = input.value.trim() === '' ? fallback : Number(input.value);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    input.focus();
+    throw new Error('Revisa el valor de «' + (input.closest('label')?.textContent.trim() || id) + '».');
+  }
+  return value;
+}
+function entrySeconds(entry) { return entry.id === state.timer?.entryId ? Math.round(getTimerSeconds()) : entry.seconds; }
+function roundMoney(amount) { return Math.round((amount + Number.EPSILON) * 100) / 100; }
+function lineAmount(seconds, rate) { return roundMoney(seconds / 3600 * rate); }
+function currencyTotals(entries) {
+  const totals = new Map();
+  entries.forEach(entry => totals.set(entry.currency, (totals.get(entry.currency) || 0) + lineAmount(entrySeconds(entry), entry.rate)));
+  return [...totals].map(([currency, amount]) => fmtMoney(amount, currency)).join(' · ') || 'USD 0.00';
+}
+function invoiceNumber() {
+  let counter = state.invCounter;
+  while (state.invoices.some(invoice => invoice.num === 'INV-' + String(counter).padStart(3, '0'))) counter++;
+  return 'INV-' + String(counter).padStart(3, '0');
+}
 
-// ─── TIMER (timestamp-based) ──────────────────────────────────────────────────
+// ─── TIMER ───────────────────────────────────────────────────────────────────
 let tickInterval = null;
-
 function getTimerSeconds() {
-  if (!state.timer) return 0;
-  const entry = state.entries.find(e => e.id === state.timer.entryId);
+  const entry = state.entries.find(e => e.id === state.timer?.entryId);
   if (!entry) return 0;
-  const elapsed = (Date.now() - state.timer.startTs) / 1000;
-  return (entry._baseSec || 0) + Math.max(0, elapsed);
+  return (entry._baseSec || 0) + Math.max(0, (Date.now() - state.timer.startTs) / 1000);
 }
-
-function toggleTimer() {
-  if (state.timer) {
-    // STOP
-    const entry = state.entries.find(e => e.id === state.timer.entryId);
-    if (entry) {
-      entry.seconds = Math.round(getTimerSeconds());
-      delete entry._baseSec;
-    }
-    state.timer = null;
-    save();
-    clearInterval(tickInterval);
-    tickInterval = null;
-    document.getElementById('start-btn').textContent = 'Iniciar';
-    document.getElementById('start-btn').className = 'btn primary';
-    document.getElementById('timer-display').className = 'timer-display paused';
-    renderAll();
-    return;
-  }
-
-  // START
-  const taskName = document.getElementById('t-task').value.trim();
-  const projId = document.getElementById('t-project').value;
-  if (!taskName) { document.getElementById('t-task').focus(); return; }
-
-  let projectId = projId;
-  if (!projId) {
-    // auto-create project from client/task
-    const newProj = {
-      id: 'p' + Date.now() + '-' + crypto.randomUUID(),
-      name: 'Sin proyecto',
-      client: 'Sin cliente',
-      currency: document.getElementById('t-currency').value,
-      rate: parseFloat(document.getElementById('t-rate').value) || 0
-    };
-    state.projects.push(newProj);
-    projectId = newProj.id;
-  }
-
-  const proj = state.projects.find(p => p.id === projectId);
-  const entry = {
-    id: 'e' + Date.now() + '-' + crypto.randomUUID(),
-    projectId,
-    task: taskName,
-    date: today(),
-    seconds: 0,
-    rate: parseFloat(document.getElementById('t-rate').value) || proj?.rate || 0,
-    currency: document.getElementById('t-currency').value || proj?.currency || 'USD',
-    billed: false,
-    manual: false,
-    _baseSec: 0
-  };
-  state.entries.unshift(entry);
-  state.timer = { entryId: entry.id, startTs: Date.now() };
-  save();
-
-  document.getElementById('start-btn').textContent = 'Detener';
-  document.getElementById('start-btn').className = 'btn running';
-  document.getElementById('timer-display').className = 'timer-display';
-
-  tickInterval = setInterval(() => {
-    document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
-    updateStats();
-  }, 1000);
+function refreshRunningTime() {
+  document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
+  updateStats();
+  const running = state.entries.find(entry => entry.id === state.timer?.entryId);
+  document.querySelectorAll('[data-running-amount]').forEach(node => { if (running) node.textContent = fmtMoney(lineAmount(getTimerSeconds(), running.rate), running.currency); });
+  document.querySelectorAll('[data-running-time]').forEach(node => { node.textContent = fmtSec(getTimerSeconds()); });
 }
-
-// Restore timer on page load
 function restoreTimer() {
   clearInterval(tickInterval);
   tickInterval = null;
@@ -963,486 +1046,322 @@ function restoreTimer() {
   const button = document.getElementById('start-btn');
   button.textContent = running ? 'Detener' : 'Iniciar';
   button.className = running ? 'btn running' : 'btn primary';
-  const display = document.getElementById('timer-display');
-  display.className = running ? 'timer-display' : 'timer-display paused';
-  display.textContent = fmtSec(getTimerSeconds());
-  if (!running) return;
-  tickInterval = setInterval(() => {
-    display.textContent = fmtSec(getTimerSeconds());
-    updateStats();
-  }, 1000);
+  document.getElementById('timer-display').className = running ? 'timer-display' : 'timer-display paused';
+  document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
+  if (running) tickInterval = setInterval(refreshRunningTime, 1000);
+}
+function toggleTimer() {
+  if (state.timer) {
+    const entry = state.entries.find(e => e.id === state.timer.entryId);
+    if (entry) { entry.seconds = Math.round(getTimerSeconds()); delete entry._baseSec; }
+    state.timer = null;
+  } else {
+    const task = document.getElementById('t-task').value.trim();
+    if (!task) { document.getElementById('t-task').focus(); return; }
+    let rate;
+    try { rate = readNumber('t-rate'); } catch (error) { alert(error.message); return; }
+    const currency = document.getElementById('t-currency').value;
+    let projectId = document.getElementById('t-project').value;
+    if (!state.projects.some(p => p.id === projectId)) {
+      projectId = 'p' + Date.now() + '-' + crypto.randomUUID();
+      state.projects.push({ id: projectId, name: 'Sin proyecto', client: 'Sin cliente', rate, currency });
+    }
+    const entry = { id: 'e' + Date.now() + '-' + crypto.randomUUID(), projectId, task, date: today(), seconds: 0, rate, currency, billed: false, manual: false, _baseSec: 0 };
+    state.entries.unshift(entry);
+    state.timer = { entryId: entry.id, startTs: Date.now() };
+  }
+  save(); renderAll(); restoreTimer();
 }
 
-// ─── PROJECTS ─────────────────────────────────────────────────────────────────
+// ─── PROJECTS ────────────────────────────────────────────────────────────────
+const expandedProjects = new Set();
 function syncProjectSelects() {
   ['t-project', 'm-project'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const cur = sel.value;
-    const isTracker = id === 't-project';
-    sel.innerHTML = isTracker
-      ? '<option value="">— seleccionar proyecto —</option>'
-      : '<option value="">— seleccionar —</option>';
-    state.projects.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name + (p.client ? ' · ' + p.client : '');
-      sel.appendChild(opt);
+    const select = document.getElementById(id), current = select.value;
+    select.innerHTML = '<option value="">— seleccionar proyecto —</option>';
+    state.projects.forEach(project => {
+      const option = document.createElement('option');
+      option.value = project.id;
+      option.textContent = project.name + (project.client ? ' · ' + project.client : '');
+      select.appendChild(option);
     });
-    if (cur) sel.value = cur;
+    select.value = state.projects.some(p => p.id === current) ? current : '';
   });
 }
-
-function syncTaskSelect() {
-  const projId = document.getElementById('t-project').value;
-  if (projId) {
+function syncTaskSelect(id = 't-project') {
+  const project = state.projects.find(p => p.id === document.getElementById(id).value);
+  if (!project) return;
+  const prefix = id === 'm-project' ? 'm' : 't';
+  document.getElementById(prefix + '-rate').value = project.rate;
+  if (prefix === 't') {
     document.getElementById('new-proj-row').style.display = 'none';
-    const proj = state.projects.find(p => p.id === projId);
-    if (proj) {
-      if (proj.rate) document.getElementById('t-rate').value = proj.rate;
-      if (proj.currency) document.getElementById('t-currency').value = proj.currency;
-    }
+    document.getElementById('t-currency').value = project.currency;
   }
 }
-
 function showNewProjForm() {
   const row = document.getElementById('new-proj-row');
   row.style.display = row.style.display === 'block' ? 'none' : 'block';
   if (row.style.display === 'block') document.getElementById('new-proj-name').focus();
 }
-
 function createProject() {
   const name = document.getElementById('new-proj-name').value.trim();
-  if (!name) return;
-  const proj = {
-    id: 'p' + Date.now() + '-' + crypto.randomUUID(),
-    name,
-    client: document.getElementById('new-proj-client').value.trim() || 'Sin cliente',
-    currency: document.getElementById('t-currency').value,
-    rate: parseFloat(document.getElementById('t-rate').value) || 0
-  };
-  state.projects.push(proj);
-  save();
-  syncProjectSelects();
-  document.getElementById('t-project').value = proj.id;
+  if (!name) { document.getElementById('new-proj-name').focus(); return; }
+  let rate;
+  try { rate = readNumber('t-rate'); } catch (error) { alert(error.message); return; }
+  const project = { id: 'p' + Date.now() + '-' + crypto.randomUUID(), name, client: document.getElementById('new-proj-client').value.trim() || 'Sin cliente', currency: document.getElementById('t-currency').value, rate };
+  state.projects.push(project);
+  save(); renderAll();
+  document.getElementById('t-project').value = project.id;
   document.getElementById('new-proj-row').style.display = 'none';
   document.getElementById('new-proj-name').value = '';
   document.getElementById('new-proj-client').value = '';
 }
+function toggleProject(id) {
+  if (expandedProjects.has(id)) expandedProjects.delete(id); else expandedProjects.add(id);
+  renderProjectTree();
+}
 
-// ─── MANUAL ENTRY ─────────────────────────────────────────────────────────────
+// ─── MANUAL ENTRIES ──────────────────────────────────────────────────────────
 function addManual() {
-  const projId = document.getElementById('m-project').value;
   const task = document.getElementById('m-task').value.trim();
   const date = document.getElementById('m-date').value || today();
-  const hours = parseFloat(document.getElementById('m-hours').value) || 0;
-  const mins = parseFloat(document.getElementById('m-minutes').value) || 0;
-  const rate = parseFloat(document.getElementById('m-rate').value) || 0;
-  if (!task || (!hours && !mins)) { alert('Completa tarea y tiempo.'); return; }
-  const proj = state.projects.find(p => p.id === projId);
-  const entry = {
-    id: 'e' + Date.now() + '-' + crypto.randomUUID(),
-    projectId: projId || null,
-    task,
-    date,
-    seconds: Math.round((hours * 3600) + (mins * 60)),
-    rate,
-    currency: proj?.currency || 'USD',
-    billed: false,
-    manual: true
-  };
-  state.entries.unshift(entry);
-  save();
-  document.getElementById('m-task').value = '';
-  document.getElementById('m-hours').value = '';
-  document.getElementById('m-minutes').value = '';
-  renderAll();
+  let hours, minutes, rate;
+  try { hours = readNumber('m-hours', 0, 99999); minutes = readNumber('m-minutes', 0, 59); rate = readNumber('m-rate'); }
+  catch (error) { alert(error.message); return; }
+  const seconds = Math.round(hours * 3600 + minutes * 60);
+  if (!task || !seconds || !validDate(date)) { alert('Completa la tarea, una fecha válida y un tiempo mayor que cero.'); return; }
+  const project = state.projects.find(p => p.id === document.getElementById('m-project').value);
+  state.entries.unshift({ id: 'e' + Date.now() + '-' + crypto.randomUUID(), projectId: project?.id || null, task, date, seconds, rate, currency: project?.currency || 'USD', billed: false, manual: true });
+  save(); renderAll();
+  ['m-task', 'm-hours', 'm-minutes'].forEach(id => { document.getElementById(id).value = ''; });
 }
 
-// ─── STATS ────────────────────────────────────────────────────────────────────
+// ─── STATS AND LISTS ──────────────────────────────────────────────────────────
 function updateStats() {
-  const todayStr = today();
-  const now = new Date();
-  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const weekStr = weekStart.toISOString().slice(0, 10);
-  const monthStr = monthStart.toISOString().slice(0, 10);
-
-  let hoy = 0, sem = 0, mes = 0, pend = 0;
-  state.entries.forEach(e => {
-    const s = e.id === state.timer?.entryId ? Math.round(getTimerSeconds()) : e.seconds;
-    if (e.date === todayStr) hoy += s;
-    if (e.date >= weekStr) sem += s;
-    if (e.date >= monthStr) mes += s;
-    if (!e.billed) pend += s / 3600 * e.rate;
+  const now = new Date(), todayStr = today();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - (now.getDay() + 6) % 7);
+  const weekStr = localDate(weekStart), monthStr = localDate(new Date(now.getFullYear(), now.getMonth(), 1));
+  let day = 0, week = 0, month = 0;
+  state.entries.forEach(entry => {
+    const seconds = entrySeconds(entry);
+    if (entry.date === todayStr) day += seconds;
+    if (entry.date >= weekStr && entry.date <= todayStr) week += seconds;
+    if (entry.date >= monthStr && entry.date <= todayStr) month += seconds;
   });
-  document.getElementById('stat-hoy').textContent = fmtHm(hoy);
-  document.getElementById('stat-semana').textContent = fmtHm(sem);
-  document.getElementById('stat-mes').textContent = fmtHm(mes);
-  const cur = state.entries.find(e => !e.billed)?.currency || 'USD';
-  document.getElementById('stat-pending').textContent = cur + ' ' + pend.toFixed(2);
+  document.getElementById('stat-hoy').textContent = fmtHm(day);
+  document.getElementById('stat-semana').textContent = fmtHm(week);
+  document.getElementById('stat-mes').textContent = fmtHm(month);
+  document.getElementById('stat-pending').textContent = currencyTotals(state.entries.filter(e => !e.billed));
 }
-
-// ─── RECENT LIST ──────────────────────────────────────────────────────────────
+function entryRow(entry, showManual = false) {
+  const project = state.projects.find(p => p.id === entry.projectId);
+  const running = entry.id === state.timer?.entryId;
+  return `<div class="task-row">
+    <span class="task-name">${escapeHTML(entry.task)}</span>
+    <span class="entry-project">${escapeHTML(project ? project.name + ' · ' + project.client : 'Sin proyecto')}</span>
+    <span class="task-date">${escapeHTML(entry.date)}</span>
+    <span class="task-duration" ${running ? 'data-running-time' : ''}>${fmtSec(entrySeconds(entry))}</span>
+    <span class="task-amount" ${running ? 'data-running-amount' : ''}>${fmtMoney(lineAmount(entrySeconds(entry), entry.rate), entry.currency)}</span>
+    ${showManual ? `<span class="badge">${entry.manual ? 'manual' : 'timer'}</span>` : ''}
+    <span class="badge ${entry.billed ? 'billed' : 'pending'}">${running ? 'en curso' : entry.billed ? 'fact.' : 'pend.'}</span>
+    <button class="btn sm" onclick="openEditEntry('${entry.id}')" aria-label="Editar entrada">✏</button>
+    <button class="btn sm danger" onclick="deleteEntry('${entry.id}')" aria-label="Eliminar entrada">✕</button>
+  </div>`;
+}
 function renderRecent() {
-  const el = document.getElementById('recent-list');
-  const recent = state.entries.slice(0, 8);
-  if (!recent.length) { el.innerHTML = '<div class="empty">Sin entradas aún.</div>'; return; }
-  el.innerHTML = recent.map(e => {
-    const proj = state.projects.find(p => p.id === e.projectId);
-    const secs = e.id === state.timer?.entryId ? Math.round(getTimerSeconds()) : e.seconds;
-    return `<div class="task-row">
-      <span class="task-name">${e.task}</span>
-      <span style="font-size:11px;color:var(--muted);min-width:130px;">${proj ? proj.name + ' · ' + proj.client : '—'}</span>
-      <span class="task-date">${e.date}</span>
-      <span class="task-duration">${fmtSec(secs)}</span>
-      <span class="task-amount">${fmtMoney(secs / 3600 * e.rate, e.currency)}</span>
-      <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
-      <button class="btn sm" onclick="openEditEntry('${e.id}')">✏</button>
-      <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
-    </div>`;
-  }).join('');
+  document.getElementById('recent-list').innerHTML = state.entries.slice(0, 8).map(e => entryRow(e)).join('') || '<div class="empty">Sin entradas aún.</div>';
 }
-
-// ─── PROJECT TREE ─────────────────────────────────────────────────────────────
-function renderProjectTree() {
-  const el = document.getElementById('project-tree');
-  if (!state.projects.length) { el.innerHTML = '<div class="empty">Sin proyectos. Crea uno desde el Tracker.</div>'; return; }
-
-  let html = '';
-  state.projects.forEach(proj => {
-    const entries = state.entries.filter(e => e.projectId === proj.id);
-    const totalSec = entries.reduce((s, e) => s + e.seconds, 0);
-    const totalAmt = entries.reduce((s, e) => s + e.seconds / 3600 * e.rate, 0);
-    const pending = entries.filter(e => !e.billed).reduce((s, e) => s + e.seconds / 3600 * e.rate, 0);
-
-    // Group by task name
-    const taskMap = {};
-    entries.forEach(e => {
-      if (!taskMap[e.task]) taskMap[e.task] = [];
-      taskMap[e.task].push(e);
-    });
-
-    const taskRows = Object.entries(taskMap).map(([taskName, taskEntries]) => {
-      const dateRows = taskEntries.sort((a, b) => b.date.localeCompare(a.date)).map(e =>
-        `<div class="task-row" style="padding-left:1rem;background:var(--bg);">
-          <span class="task-name" style="font-weight:400;font-size:12px;color:var(--muted);">${e.date}</span>
-          <span style="flex:1;font-size:12px;">${e.task !== taskName ? e.task : ''}</span>
-          <span class="task-duration">${fmtSec(e.seconds)}</span>
-          <span class="task-amount">${fmtMoney(e.seconds / 3600 * e.rate, e.currency)}</span>
-          <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
-          <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
-        </div>`
-      ).join('');
-      const taskSec = taskEntries.reduce((s, e) => s + e.seconds, 0);
-      return `<div class="task-row">
-        <span class="task-name">${taskName}</span>
-        <span class="task-duration">${fmtHm(taskSec)}</span>
-        <span class="task-amount">${fmtMoney(taskEntries.reduce((s,e)=>s+e.seconds/3600*e.rate,0), proj.currency)}</span>
-        <span></span><span></span>
-      </div>${dateRows}`;
-    }).join('');
-
-    html += `<div class="project-group">
-      <div class="project-header" onclick="toggleProject('${proj.id}')">
-        <div class="project-name">
-          <span class="project-toggle" id="toggle-${proj.id}">▶</span>
-          ${proj.name}
-          <span style="font-size:12px;color:var(--muted);font-weight:400;">· ${proj.client}</span>
-        </div>
-        <div class="project-meta">
-          <span>${fmtHm(totalSec)}</span>
-          <span style="color:var(--accent);">${fmtMoney(totalAmt, proj.currency)}</span>
-          <span style="color:var(--muted);">${fmtMoney(pending, proj.currency)} pend.</span>
-          <button class="btn sm danger" onclick="event.stopPropagation();deleteProject('${proj.id}')">✕</button>
-        </div>
-      </div>
-      <div class="task-group" id="tg-${proj.id}" style="max-height:0;">
-        ${taskRows || '<div class="empty" style="padding:1rem;">Sin entradas en este proyecto.</div>'}
-      </div>
-    </div>`;
-  });
-  el.innerHTML = html;
-}
-
-function toggleProject(id) {
-  const tg = document.getElementById('tg-' + id);
-  const tog = document.getElementById('toggle-' + id);
-  if (tg.style.maxHeight === '0px' || tg.style.maxHeight === '0') {
-    tg.style.maxHeight = tg.scrollHeight + 'px';
-    tog.classList.add('open');
-  } else {
-    tg.style.maxHeight = '0';
-    tog.classList.remove('open');
-  }
-}
-
-// ─── ALL ENTRIES (manual page) ────────────────────────────────────────────────
 function renderAllEntries() {
-  const el = document.getElementById('all-entries-list');
-  if (!state.entries.length) { el.innerHTML = '<div class="empty">Sin entradas.</div>'; return; }
-  el.innerHTML = state.entries.map(e => {
-    const proj = state.projects.find(p => p.id === e.projectId);
-    return `<div class="task-row">
-      <span class="task-name">${e.task}</span>
-      <span style="font-size:11px;color:var(--muted);min-width:130px;">${proj ? proj.name : '—'}</span>
-      <span class="task-date">${e.date}</span>
-      <span class="task-duration">${fmtSec(e.seconds)}</span>
-      <span class="task-amount">${fmtMoney(e.seconds / 3600 * e.rate, e.currency)}</span>
-      <span class="badge ${e.manual ? 'billed' : 'pending'}">${e.manual ? 'manual' : 'timer'}</span>
-      <span class="badge ${e.billed ? 'billed' : 'pending'}">${e.billed ? 'fact.' : 'pend.'}</span>
-      <button class="btn sm" onclick="openEditEntry('${e.id}')">✏</button>
-      <button class="btn sm danger" onclick="deleteEntry('${e.id}')">✕</button>
+  document.getElementById('all-entries-list').innerHTML = state.entries.map(e => entryRow(e, true)).join('') || '<div class="empty">Sin entradas.</div>';
+}
+function renderProjectTree() {
+  document.getElementById('project-tree').innerHTML = state.projects.map(project => {
+    const entries = state.entries.filter(e => e.projectId === project.id);
+    const tasks = new Map();
+    entries.forEach(entry => { if (!tasks.has(entry.task)) tasks.set(entry.task, []); tasks.get(entry.task).push(entry); });
+    const rows = [...tasks].map(([name, items]) => `<div class="task-row"><span class="task-name">${escapeHTML(name)}</span><span>${fmtHm(items.reduce((sum, e) => sum + entrySeconds(e), 0))}</span><span>${currencyTotals(items)}</span></div>` + items.map(e => entryRow(e)).join('')).join('');
+    const expanded = expandedProjects.has(project.id);
+    return `<div class="project-group">
+      <div class="project-header">
+        <button class="project-name project-open" onclick="toggleProject('${project.id}')" aria-expanded="${expanded}"><span>${expanded ? '▼' : '▶'}</span>${escapeHTML(project.name)} <span class="project-client">· ${escapeHTML(project.client)}</span></button>
+        <div class="project-meta"><span>${fmtHm(entries.reduce((sum, e) => sum + entrySeconds(e), 0))}</span><span>${currencyTotals(entries)}</span><span>${currencyTotals(entries.filter(e => !e.billed))} pend.</span><button class="btn sm danger" onclick="deleteProject('${project.id}')" aria-label="Eliminar proyecto">✕</button></div>
+      </div>
+      <div class="task-group" ${expanded ? '' : 'hidden'}>${rows || '<div class="empty">Sin entradas en este proyecto.</div>'}</div>
     </div>`;
-  }).join('');
+  }).join('') || '<div class="empty">Sin proyectos. Crea uno desde el Tracker.</div>';
 }
 
-// ─── INVOICE SELECTOR ─────────────────────────────────────────────────────────
+// ─── INVOICES ────────────────────────────────────────────────────────────────
+let previewInvoiceId = null;
+let previewInvoiceContent = null;
 function renderInvSelector() {
-  const el = document.getElementById('inv-selector');
-  const pending = state.entries.filter(e => !e.billed);
-  if (!pending.length) { el.innerHTML = '<div class="empty">No hay entradas sin facturar.</div>'; return; }
-  el.innerHTML = pending.map(e => {
-    const proj = state.projects.find(p => p.id === e.projectId);
-    return `<label class="entry-check-row">
-      <input type="checkbox" value="${e.id}" />
-      <span style="flex:1;">${e.task}</span>
-      <span style="font-size:11px;color:var(--muted);min-width:110px;">${proj ? proj.name + ' · ' + proj.client : '—'}</span>
-      <span class="task-date">${e.date}</span>
-      <span class="task-duration">${fmtSec(e.seconds)}</span>
-      <span class="task-amount">${fmtMoney(e.seconds / 3600 * e.rate, e.currency)}</span>
-    </label>`;
-  }).join('');
+  const selected = new Set([...document.querySelectorAll('#inv-selector input:checked')].map(input => input.value));
+  document.getElementById('inv-selector').innerHTML = state.entries.filter(e => !e.billed && e.id !== state.timer?.entryId).map(entry => {
+    const project = state.projects.find(p => p.id === entry.projectId);
+    return `<label class="entry-check-row"><input type="checkbox" value="${entry.id}" ${selected.has(entry.id) ? 'checked' : ''} /><span class="task-name">${escapeHTML(entry.task)}</span><span class="entry-project">${escapeHTML(project ? project.name + ' · ' + project.client : 'Sin proyecto')}</span><span class="task-date">${entry.date}</span><span class="task-duration">${fmtSec(entry.seconds)}</span><span class="task-amount">${fmtMoney(lineAmount(entry.seconds, entry.rate), entry.currency)}</span></label>`;
+  }).join('') || '<div class="empty">No hay entradas pendientes. Detén el cronómetro para facturar una entrada en curso.</div>';
 }
-
-// ─── GENERATE INVOICE ─────────────────────────────────────────────────────────
 function generateInvoice() {
-  const selected = [...document.querySelectorAll('#inv-selector input:checked')].map(cb => cb.value);
-  if (!selected.length) { alert('Selecciona al menos una entrada.'); return; }
-  const items = state.entries.filter(e => selected.includes(e.id));
-  const taxPct = parseFloat(document.getElementById('inv-tax').value) || 0;
-  const subtotal = items.reduce((s, e) => s + e.seconds / 3600 * e.rate, 0);
-  const taxAmt = subtotal * taxPct / 100;
-  const total = subtotal + taxAmt;
-  const cur = items[0].currency;
-
-  const from = document.getElementById('inv-from').value || 'Tu empresa';
-  const fromD = document.getElementById('inv-from-d').value || '';
-  const to = document.getElementById('inv-to').value || 'Cliente';
-  const toD = document.getElementById('inv-to-d').value || '';
-  const num = document.getElementById('inv-num').value || ('INV-' + String(state.invCounter).padStart(3, '0'));
-  const date = document.getElementById('inv-date').value || today();
-  const due = document.getElementById('inv-due').value || '';
-  const notes = document.getElementById('inv-notes').value || '';
-
-  const rows = items.map(e => `
-    <tr>
-      <td>${e.task}</td>
-      <td>${e.date}</td>
-      <td>${fmtHm(e.seconds)}</td>
-      <td>${cur} ${e.rate.toFixed(2)}/hr</td>
-      <td>${fmtMoney(e.seconds / 3600 * e.rate, cur)}</td>
-    </tr>`).join('');
-
-  document.getElementById('inv-print-target').innerHTML = `
-    <div class="inv-preview-wrap" id="inv-content">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem;">
-        <div>
-          <div class="inv-p-title">Factura</div>
-          <div class="inv-p-num">${num}</div>
-        </div>
-        <div style="text-align:right;font-size:13px;">
-          <div style="font-weight:bold;">${date}</div>
-          ${due ? '<div style="color:#888;">Vence: ' + due + '</div>' : ''}
-        </div>
-      </div>
-      <div class="inv-p-parties">
-        <div><div class="inv-p-label">De</div><div class="inv-p-name">${from}</div><div class="inv-p-detail">${fromD}</div></div>
-        <div><div class="inv-p-label">Para</div><div class="inv-p-name">${to}</div><div class="inv-p-detail">${toD}</div></div>
-      </div>
-      <table class="inv-p-table">
-        <thead><tr><th>Descripción</th><th>Fecha</th><th>Tiempo</th><th>Tarifa</th><th style="text-align:right;">Total</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="inv-p-totals">
-        <div class="inv-p-trow"><span style="color:#888;">Subtotal</span><span>${fmtMoney(subtotal, cur)}</span></div>
-        ${taxPct > 0 ? `<div class="inv-p-trow"><span style="color:#888;">IGV/IVA (${taxPct}%)</span><span>${fmtMoney(taxAmt, cur)}</span></div>` : ''}
-        <div class="inv-p-trow total"><span>Total</span><span>${fmtMoney(total, cur)}</span></div>
-      </div>
-      ${notes ? `<div class="inv-p-notes">${notes}</div>` : ''}
-    </div>
-    <div style="display:flex;gap:10px;margin-top:1rem;justify-content:flex-end;">
-      <button class="btn primary" id="pdf-btn" onclick="downloadPDF('${num}')">⬇ Descargar PDF</button>
-      <button class="btn" onclick="window.print()">Imprimir</button>
-      <button class="btn" onclick="document.getElementById('inv-print-target').innerHTML=''">Cerrar</button>
-    </div>`;
-
-  items.forEach(e => { const en = state.entries.find(x => x.id === e.id); if (en) en.billed = true; });
+  const selected = new Set([...document.querySelectorAll('#inv-selector input:checked')].map(input => input.value));
+  const items = state.entries.filter(e => selected.has(e.id) && !e.billed && e.id !== state.timer?.entryId);
+  if (!items.length) { alert('Selecciona al menos una entrada finalizada.'); return; }
+  if (new Set(items.map(e => e.currency)).size > 1) { alert('Selecciona entradas de una sola moneda por factura.'); return; }
+  const clients = new Set(items.map(e => state.projects.find(p => p.id === e.projectId)?.client || 'Sin cliente'));
+  if (clients.size > 1) { alert('Selecciona entradas de un solo cliente por factura.'); return; }
+  let taxPct;
+  try { taxPct = readNumber('inv-tax', 0, 100); } catch (error) { alert(error.message); return; }
+  const num = document.getElementById('inv-num').value.trim() || invoiceNumber();
+  if (state.invoices.some(invoice => invoice.num === num)) { alert('Ese número de factura ya existe. Usa otro número.'); return; }
+  const date = document.getElementById('inv-date').value || today(), due = document.getElementById('inv-due').value;
+  if (!validDate(date) || (due && (!validDate(due) || due < date))) { alert('Revisa las fechas de emisión y vencimiento.'); return; }
+  const invoice = {
+    id: 'i' + Date.now() + '-' + crypto.randomUUID(), num, date, due, taxPct,
+    from: document.getElementById('inv-from').value.trim() || 'Tu empresa', fromD: document.getElementById('inv-from-d').value.trim(),
+    to: document.getElementById('inv-to').value.trim() || [...clients][0], toD: document.getElementById('inv-to-d').value.trim(),
+    notes: document.getElementById('inv-notes').value.trim(), currency: items[0].currency,
+    items: JSON.parse(JSON.stringify(items)), status: 'issued'
+  };
+  state.invoices.unshift(invoice);
+  items.forEach(entry => { entry.billed = true; entry.invoiceId = invoice.id; });
   state.invCounter++;
-  save();
-  renderInvSelector();
-  document.getElementById('inv-print-target').scrollIntoView({ behavior: 'smooth' });
+  save(); renderAll();
+  document.getElementById('inv-num').value = invoiceNumber();
+  showInvoice(invoice.id);
 }
-
-// ─── DOWNLOAD PDF ────────────────────────────────────────────────────────────
-async function downloadPDF(invNum) {
-  const btn = document.getElementById('pdf-btn');
-  btn.textContent = 'Generando...';
-  btn.disabled = true;
-
-  const el = document.getElementById('inv-content');
+function closeInvoice() {
+  previewInvoiceId = null;
+  previewInvoiceContent = null;
+  document.getElementById('inv-print-target').innerHTML = '';
+}
+function showInvoice(id) {
+  const invoice = state.invoices.find(item => item.id === id);
+  if (!invoice) { closeInvoice(); return; }
+  previewInvoiceId = id;
+  previewInvoiceContent = JSON.stringify(invoice);
+  const subtotal = roundMoney(invoice.items.reduce((sum, e) => sum + lineAmount(e.seconds, e.rate), 0));
+  const tax = roundMoney(subtotal * invoice.taxPct / 100);
+  const cur = invoice.currency;
+  document.getElementById('inv-print-target').innerHTML = `<div class="inv-preview-wrap" id="inv-content">
+    <div class="invoice-heading"><div><div class="inv-p-title">Factura${invoice.status === 'void' ? ' · Anulada' : ''}</div><div class="inv-p-num">${escapeHTML(invoice.num)}</div></div><div>${invoice.date}${invoice.due ? '<br>Vence: ' + invoice.due : ''}</div></div>
+    <div class="inv-p-parties"><div><div class="inv-p-label">De</div><div class="inv-p-name">${escapeHTML(invoice.from)}</div><div class="inv-p-detail">${escapeHTML(invoice.fromD)}</div></div><div><div class="inv-p-label">Para</div><div class="inv-p-name">${escapeHTML(invoice.to)}</div><div class="inv-p-detail">${escapeHTML(invoice.toD)}</div></div></div>
+    <table class="inv-p-table"><thead><tr><th>Descripción</th><th>Fecha</th><th>Tiempo</th><th>Tarifa</th><th>Total</th></tr></thead><tbody>${invoice.items.map(e => `<tr><td>${escapeHTML(e.task)}</td><td>${e.date}</td><td>${fmtSec(e.seconds)}</td><td>${fmtMoney(e.rate, cur)}/hr</td><td>${fmtMoney(lineAmount(e.seconds, e.rate), cur)}</td></tr>`).join('')}</tbody></table>
+    <div class="inv-p-totals"><div class="inv-p-trow"><span>Subtotal</span><span>${fmtMoney(subtotal, cur)}</span></div>${invoice.taxPct ? `<div class="inv-p-trow"><span>IGV/IVA (${invoice.taxPct}%)</span><span>${fmtMoney(tax, cur)}</span></div>` : ''}<div class="inv-p-trow total"><span>Total</span><span>${fmtMoney(subtotal + tax, cur)}</span></div></div>
+    ${invoice.notes ? `<div class="inv-p-notes">${escapeHTML(invoice.notes)}</div>` : ''}</div>
+    <div class="invoice-actions"><button class="btn primary" id="pdf-btn" onclick="downloadPDF()">⬇ Descargar PDF</button><button class="btn" onclick="window.print()">Imprimir</button><button class="btn" onclick="closeInvoice()">Cerrar</button></div>`;
+  document.getElementById('inv-print-target').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function renderInvoiceHistory() {
+  document.getElementById('invoice-history').innerHTML = state.invoices.map(invoice => `<div class="task-row"><span class="task-name">${escapeHTML(invoice.num)} · ${escapeHTML(invoice.to)}</span><span>${invoice.date}</span><span class="badge">${invoice.status === 'void' ? 'anulada' : 'emitida'}</span><button class="btn sm" onclick="showInvoice('${invoice.id}')">Ver / PDF</button>${invoice.status === 'issued' ? `<button class="btn sm danger" onclick="voidInvoice('${invoice.id}')">Anular</button>` : ''}</div>`).join('') || '<div class="empty">Aquí se guardarán las nuevas facturas para volver a descargarlas.</div>';
+  const preview = state.invoices.find(invoice => invoice.id === previewInvoiceId);
+  if (previewInvoiceId && !preview) closeInvoice();
+  else if (preview && JSON.stringify(preview) !== previewInvoiceContent) showInvoice(preview.id);
+}
+function voidInvoice(id) {
+  const invoice = state.invoices.find(item => item.id === id);
+  if (!invoice || invoice.status === 'void' || !confirm('¿Anular esta factura y devolver sus entradas a pendientes?')) return;
+  invoice.status = 'void';
+  state.entries.filter(e => e.invoiceId === id).forEach(entry => { entry.billed = false; delete entry.invoiceId; });
+  save(); renderAll();
+  if (previewInvoiceId === id) showInvoice(id);
+}
+async function downloadPDF() {
+  const invoice = state.invoices.find(item => item.id === previewInvoiceId);
+  if (!invoice) return;
+  const button = document.getElementById('pdf-btn');
+  button.disabled = true; button.textContent = 'Generando…';
   try {
-    const canvas = await html2canvas(el, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: '#ffffff',
-      logging: false
-    });
-
-    const { jsPDF } = window.jspdf;
-    const imgData = canvas.toDataURL('image/png');
-    const pdfW = 210; // A4 mm
-    const pdfH = (canvas.height * pdfW) / canvas.width;
-    const pdf = new jsPDF({ orientation: pdfH > 297 ? 'p' : 'p', unit: 'mm', format: 'a4' });
-
-    // If content is taller than A4, split into pages
-    const pageH = 297;
-    if (pdfH <= pageH) {
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
-    } else {
-      let yOffset = 0;
-      while (yOffset < pdfH) {
-        const sliceH = Math.min(pageH, pdfH - yOffset);
-        pdf.addImage(imgData, 'PNG', 0, -yOffset, pdfW, pdfH);
-        yOffset += pageH;
-        if (yOffset < pdfH) pdf.addPage();
-      }
+    if (!window.html2canvas || !window.jspdf?.jsPDF) throw new Error('No se cargaron las herramientas de PDF. Revisa internet o usa Imprimir.');
+    await document.fonts.ready;
+    const canvas = await html2canvas(document.getElementById('inv-content'), { scale: 2, useCORS: true, backgroundColor: '#fff', logging: false, windowWidth: 1000 });
+    const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+    const width = 190, pageHeight = 277;
+    const pixelsPerPage = Math.floor(canvas.width * pageHeight / width);
+    for (let top = 0; top < canvas.height; top += pixelsPerPage) {
+      if (top) pdf.addPage();
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width; slice.height = Math.min(pixelsPerPage, canvas.height - top);
+      slice.getContext('2d').drawImage(canvas, 0, top, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
+      pdf.addImage(slice.toDataURL('image/png'), 'PNG', 10, 10, width, slice.height * width / slice.width);
     }
-
-    pdf.save('factura-' + (invNum || 'INV') + '.pdf');
-  } catch(e) {
-    alert('Error al generar PDF: ' + e.message);
-  }
-
-  btn.textContent = '⬇ Descargar PDF';
-  btn.disabled = false;
+    pdf.save('factura-' + invoice.num.replace(/[^a-zA-Z0-9_-]/g, '-') + '.pdf');
+  } catch (error) { alert('Error al generar PDF: ' + error.message); }
+  finally { button.disabled = false; button.textContent = '⬇ Descargar PDF'; }
 }
 
-// ─── EDIT ENTRY ──────────────────────────────────────────────────────────────
+// ─── EDIT AND DELETE ─────────────────────────────────────────────────────────
 function openEditEntry(id) {
-  const e = state.entries.find(x => x.id === id);
-  if (!e) return;
-
-  // Remove existing modal if any
-  const existing = document.getElementById('edit-modal');
-  if (existing) existing.remove();
-
-  const projOptions = state.projects.map(p =>
-    `<option value="${p.id}" ${p.id === e.projectId ? 'selected' : ''}>${p.name} · ${p.client}</option>`
-  ).join('');
-
-  const h = Math.floor(e.seconds / 3600);
-  const m = Math.floor((e.seconds % 3600) / 60);
-
+  const entry = state.entries.find(e => e.id === id);
+  if (!entry) return;
+  if (id === state.timer?.entryId) { alert('Detén el cronómetro antes de editar esta entrada.'); return; }
+  if (entry.invoiceId && state.invoices.some(i => i.id === entry.invoiceId && i.status === 'issued')) { alert('Anula primero la factura de esta entrada para poder editarla.'); return; }
+  document.getElementById('edit-modal')?.remove();
   const modal = document.createElement('div');
-  modal.id = 'edit-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:999;';
-  modal.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:1.5rem;width:520px;max-width:95vw;">
-      <div style="font-size:15px;font-weight:600;margin-bottom:1rem;">Editar entrada</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-        <label class="field" style="grid-column:1/-1;">Tarea
-          <input type="text" id="edit-task" value="${e.task}" />
-        </label>
-        <label class="field">Proyecto
-          <select id="edit-project">
-            <option value="">— sin proyecto —</option>
-            ${projOptions}
-          </select>
-        </label>
-        <label class="field">Fecha
-          <input type="date" id="edit-date" value="${e.date}" />
-        </label>
-        <label class="field">Horas
-          <input type="number" id="edit-hours" value="${h}" min="0" max="24" />
-        </label>
-        <label class="field">Minutos
-          <input type="number" id="edit-minutes" value="${m}" min="0" max="59" />
-        </label>
-        <label class="field">Tarifa/hr
-          <input type="number" id="edit-rate" value="${e.rate}" min="0" />
-        </label>
-        <label class="field">Moneda
-          <select id="edit-currency">
-            ${['USD','PEN','EUR','MXN'].map(c=>`<option ${c===e.currency?'selected':''}>${c}</option>`).join('')}
-          </select>
-        </label>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;">
-        <button class="btn sm" onclick="document.getElementById('edit-modal').remove()">Cancelar</button>
-        <button class="btn sm primary" onclick="saveEditEntry('${id}')">Guardar</button>
-      </div>
-    </div>`;
+  modal.id = 'edit-modal'; modal.className = 'modal-overlay';
+  modal.innerHTML = `<div class="edit-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title"><h2 id="edit-title">Editar entrada</h2><div class="inv-grid">
+    <label class="field">Tarea<input id="edit-task" value="${escapeHTML(entry.task)}"></label>
+    <label class="field">Proyecto<select id="edit-project"><option value="">— sin proyecto —</option>${state.projects.map(p => `<option value="${p.id}" ${p.id === entry.projectId ? 'selected' : ''}>${escapeHTML(p.name)} · ${escapeHTML(p.client)}</option>`).join('')}</select></label>
+    <label class="field">Fecha<input type="date" id="edit-date" value="${entry.date}"></label>
+    <label class="field">Horas<input type="number" id="edit-hours" min="0" value="${Math.floor(entry.seconds / 3600)}"></label>
+    <label class="field">Minutos<input type="number" id="edit-minutes" min="0" max="59" value="${Math.floor(entry.seconds % 3600 / 60)}"></label>
+    <label class="field">Segundos<input type="number" id="edit-seconds" min="0" max="59" value="${entry.seconds % 60}"></label>
+    <label class="field">Tarifa/hr<input type="number" id="edit-rate" min="0" step="0.01" value="${entry.rate}"></label>
+    <label class="field">Moneda<select id="edit-currency">${['USD','PEN','EUR','MXN'].map(currency => `<option ${currency === entry.currency ? 'selected' : ''}>${currency}</option>`).join('')}</select></label>
+    </div><div class="invoice-actions"><button class="btn sm" onclick="closeEditEntry()">Cancelar</button><button class="btn sm primary" onclick="saveEditEntry('${id}')">Guardar</button></div></div>`;
   document.body.appendChild(modal);
-  modal.addEventListener('click', ev => { if (ev.target === modal) modal.remove(); });
+  modal.addEventListener('click', event => { if (event.target === modal) closeEditEntry(); });
+  document.getElementById('edit-task').focus();
 }
-
+function closeEditEntry() { document.getElementById('edit-modal')?.remove(); }
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeEditEntry(); });
 function saveEditEntry(id) {
-  const e = state.entries.find(x => x.id === id);
-  if (!e) return;
-  e.task     = document.getElementById('edit-task').value.trim() || e.task;
-  e.projectId= document.getElementById('edit-project').value || null;
-  e.date     = document.getElementById('edit-date').value || e.date;
-  e.seconds  = Math.round((parseFloat(document.getElementById('edit-hours').value)||0)*3600 + (parseFloat(document.getElementById('edit-minutes').value)||0)*60);
-  e.rate     = parseFloat(document.getElementById('edit-rate').value) || 0;
-  e.currency = document.getElementById('edit-currency').value;
-  save();
-  document.getElementById('edit-modal').remove();
-  renderAll();
+  const entry = state.entries.find(e => e.id === id);
+  if (!entry) { closeEditEntry(); return; }
+  if (id === state.timer?.entryId || (entry.invoiceId && state.invoices.some(i => i.id === entry.invoiceId && i.status === 'issued'))) { alert('La entrada cambió. Cierra y vuelve a abrir el editor.'); return; }
+  let hours, minutes, seconds, rate;
+  try { hours = readNumber('edit-hours', 0, 99999); minutes = readNumber('edit-minutes', 0, 59); seconds = readNumber('edit-seconds', 0, 59); rate = readNumber('edit-rate'); }
+  catch (error) { alert(error.message); return; }
+  const task = document.getElementById('edit-task').value.trim(), date = document.getElementById('edit-date').value;
+  if (!task || !validDate(date)) { alert('Completa la tarea y una fecha válida.'); return; }
+  Object.assign(entry, { task, date, projectId: document.getElementById('edit-project').value || null, seconds: Math.round(hours * 3600 + minutes * 60 + seconds), rate, currency: document.getElementById('edit-currency').value });
+  save(); closeEditEntry(); renderAll();
 }
-
-// ─── DELETE ───────────────────────────────────────────────────────────────────
+function hasIssuedInvoice(entry) { return entry.invoiceId && state.invoices.some(i => i.id === entry.invoiceId && i.status === 'issued'); }
 function deleteEntry(id) {
+  const entry = state.entries.find(e => e.id === id);
+  if (!entry) return;
+  if (hasIssuedInvoice(entry)) { alert('Anula primero la factura de esta entrada para poder eliminarla.'); return; }
+  if (!confirm('¿Eliminar esta entrada' + (id === state.timer?.entryId ? ' y detener su cronómetro' : '') + '?')) return;
   state.entries = state.entries.filter(e => e.id !== id);
   save(); renderAll(); restoreTimer();
 }
 function deleteProject(id) {
-  if (!confirm('¿Eliminar proyecto y todas sus entradas?')) return;
+  if (state.entries.some(e => e.projectId === id && hasIssuedInvoice(e))) { alert('Este proyecto tiene entradas facturadas. Anula sus facturas antes de eliminarlo.'); return; }
+  if (!confirm('¿Eliminar el proyecto y todas sus entradas?')) return;
   state.projects = state.projects.filter(p => p.id !== id);
   state.entries = state.entries.filter(e => e.projectId !== id);
+  expandedProjects.delete(id);
   save(); renderAll(); restoreTimer();
 }
-
-// ─── NAV ──────────────────────────────────────────────────────────────────────
 function nav(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(node => node.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(node => node.classList.remove('active'));
   document.getElementById('page-' + page).classList.add('active');
   document.querySelector(`[onclick="nav('${page}')"]`).classList.add('active');
-  if (page === 'proyectos') renderProjectTree();
-  if (page === 'manual') { renderAllEntries(); syncProjectSelects(); }
-  if (page === 'facturas') { renderInvSelector(); syncProjectSelects(); }
+  renderAll();
 }
-
-// ─── RENDER ALL ───────────────────────────────────────────────────────────────
 function renderAll() {
-  syncProjectSelects();
-  renderRecent();
-  updateStats();
-  renderProjectTree();
-  renderAllEntries();
-  renderInvSelector();
+  syncProjectSelects(); renderRecent(); updateStats(); renderProjectTree(); renderAllEntries(); renderInvSelector(); renderInvoiceHistory();
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-document.getElementById('inv-num').value = 'INV-' + String(state.invCounter).padStart(3, '0');
+document.getElementById('inv-num').value = invoiceNumber();
 document.getElementById('inv-date').value = today();
 const due = new Date(); due.setDate(due.getDate() + 15);
-document.getElementById('inv-due').value = due.toISOString().slice(0, 10);
+document.getElementById('inv-due').value = localDate(due);
 document.getElementById('m-date').value = today();
-
-renderAll();
-restoreTimer();
+renderAll(); restoreTimer(); setDriveStatus('local');
+if (recoveryData) showDataNotice('No pudimos leer tus datos originales. Descarga la copia de recuperación; importa un respaldo válido antes de continuar.');
+else if (localWriteFailed) showDataNotice('El navegador no pudo guardar datos. Descarga un respaldo JSON antes de cerrar esta página.');
 </script>
 </body>
 </html>
