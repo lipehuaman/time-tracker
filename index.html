@@ -282,9 +282,13 @@ input[type="checkbox"] {
     <div class="sidebar-footer">
       <div id="drive-status" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:12px;color:var(--muted);">
         <span id="drive-dot" style="width:7px;height:7px;border-radius:50%;background:var(--muted2);flex-shrink:0;"></span>
-        <span id="drive-label">Sin conectar</span>
+        <span id="drive-label" role="status" aria-live="polite">Solo en esta computadora</span>
       </div>
       <button id="drive-btn" class="btn sm" onclick="driveConnect()" style="width:100%;font-size:12px;margin-bottom:6px;">Conectar Google Drive</button>
+      <button id="drive-switch" class="btn sm" onclick="driveConnect(true)" hidden style="width:100%;font-size:11px;margin-bottom:6px;">Cambiar cuenta</button>
+      <div id="drive-account" style="font-size:11px;overflow-wrap:anywhere;margin-bottom:6px;"></div>
+      <p style="font-size:11px;line-height:1.5;margin-bottom:12px;">Conecta la misma cuenta de Google en cada computadora para recuperar tus tiempos. Espera «Sincronizado con Drive» antes de cambiar de equipo.</p>
+      <button id="backup-btn" class="btn sm" onclick="exportPreSyncBackup()" hidden style="width:100%;font-size:11px;margin-bottom:6px;">⬇ Respaldo previo</button>
       <div style="display:flex;gap:6px;">
         <button class="btn sm" onclick="exportData()" style="flex:1;font-size:11px;">⬇ JSON</button>
         <label class="btn sm" style="flex:1;font-size:11px;cursor:pointer;text-align:center;padding:6px 8px;">
@@ -439,121 +443,404 @@ input[type="checkbox"] {
 
 <script>
 // ─── STATE ───────────────────────────────────────────────────────────────────
-let state = JSON.parse(localStorage.getItem('tt_state') || 'null') || {
-  projects: [],   // {id, name, client, currency, rate}
-  entries: [],    // {id, projectId, task, date, seconds, rate, currency, billed, manual}
-  timer: null,    // {entryId, startTs}
-  invCounter: 1
-};
+function emptyState() {
+  return { projects: [], entries: [], timer: null, invCounter: 1 };
+}
+
+function normalizeState(value) {
+  if (!value || !Array.isArray(value.projects) || !Array.isArray(value.entries)) {
+    throw new Error('El archivo no contiene datos válidos de TimeTrack.');
+  }
+  for (const items of [value.projects, value.entries]) {
+    const ids = new Set();
+    for (const item of items) {
+      if (!item || typeof item.id !== 'string' || ids.has(item.id)) {
+        throw new Error('Hay registros inválidos o duplicados en el archivo.');
+      }
+      ids.add(item.id);
+    }
+  }
+  for (const entry of value.entries) {
+    if (!Number.isFinite(entry.seconds) || entry.seconds < 0 || typeof entry.task !== 'string' || typeof entry.date !== 'string') {
+      throw new Error('Hay tiempos inválidos en el archivo.');
+    }
+  }
+  const result = { ...value, invCounter: Math.max(1, Number(value.invCounter) || 1) };
+  result.timer = value.timer && Number.isFinite(value.timer.startTs) &&
+    value.entries.some(e => e.id === value.timer.entryId) ? value.timer : null;
+  const meta = value._sync || {};
+  result._sync = {
+    projects: { ...(meta.projects || {}) },
+    entries: { ...(meta.entries || {}) },
+    timer: typeof meta.timer === 'string' ? meta.timer : ''
+  };
+  return result;
+}
+
+function readLocalState(key = 'tt_state') {
+  try {
+    const raw = localStorage.getItem(key);
+    return normalizeState(raw ? JSON.parse(raw) : emptyState());
+  } catch (error) {
+    // Keep the original bytes so a broken local copy can still be recovered.
+    const raw = localStorage.getItem(key);
+    if (raw) localStorage.setItem('tt_recovery_' + Date.now(), raw);
+    console.error('No se pudo leer el respaldo local:', error);
+    return normalizeState(emptyState());
+  }
+}
+
+let state = readLocalState();
+let previousState = JSON.parse(JSON.stringify(state));
+const deviceId = localStorage.getItem('tt_device_id') || crypto.randomUUID();
+localStorage.setItem('tt_device_id', deviceId);
+let lastRevision = 0;
+
+function nextRevision() {
+  const known = [state._sync.timer, ...Object.values(state._sync.projects), ...Object.values(state._sync.entries)];
+  lastRevision = known.reduce((latest, value) => Math.max(latest, (parseInt(value, 10) || 0) + 1), Math.max(Date.now(), lastRevision + 1));
+  return String(lastRevision).padStart(16, '0') + ':' + deviceId;
+}
+
+function recordChanges() {
+  const revision = nextRevision();
+  for (const collection of ['projects', 'entries']) {
+    const before = new Map(previousState[collection].map(item => [item.id, item]));
+    const after = new Map(state[collection].map(item => [item.id, item]));
+    for (const id of new Set([...before.keys(), ...after.keys()])) {
+      if (JSON.stringify(before.get(id)) !== JSON.stringify(after.get(id))) {
+        // Retain revisions for deleted records so another computer cannot revive them.
+        state._sync[collection][id] = revision;
+      }
+    }
+  }
+  if (JSON.stringify(previousState.timer) !== JSON.stringify(state.timer)) state._sync.timer = revision;
+}
+
+function mergeStates(local, remote) {
+  const merged = normalizeState(emptyState());
+  for (const collection of ['projects', 'entries']) {
+    const a = new Map(local[collection].map(item => [item.id, item]));
+    const b = new Map(remote[collection].map(item => [item.id, item]));
+    const av = local._sync[collection], bv = remote._sync[collection];
+    const ids = new Set([...a.keys(), ...b.keys(), ...Object.keys(av), ...Object.keys(bv)]);
+    for (const id of ids) {
+      const left = av[id] || '', right = bv[id] || '';
+      // Drive wins ties for old files without revisions; unique local records survive.
+      const source = left > right ? a : right > left ? b : b.has(id) ? b : a;
+      if (source.has(id)) merged[collection].push(source.get(id));
+      if (left || right) merged._sync[collection][id] = left > right ? left : right;
+    }
+  }
+  merged.entries.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  let timerSource = local._sync.timer > remote._sync.timer ? local : remote;
+  if (!local._sync.timer && !remote._sync.timer && local.timer &&
+      !remote.entries.some(e => e.id === local.timer.entryId)) timerSource = local;
+  merged.timer = timerSource.timer;
+  merged._sync.timer = timerSource._sync.timer;
+  merged.invCounter = Math.max(local.invCounter, remote.invCounter);
+  return normalizeState(merged);
+}
+
+function persistLocal() {
+  const content = JSON.stringify(state);
+  localStorage.setItem('tt_state', content);
+  const owner = localStorage.getItem('tt_drive_owner');
+  if (owner) localStorage.setItem('tt_account_' + owner, content);
+  previousState = JSON.parse(content);
+}
+
+function preSyncBackupKey() {
+  return 'tt_before_sync_v1_' + (localStorage.getItem('tt_drive_owner') || 'local');
+}
+
+function preservePreSyncBackup() {
+  const key = preSyncBackupKey();
+  if (!localStorage.getItem(key) && (state.entries.length || state.projects.length)) {
+    localStorage.setItem(key, JSON.stringify(state));
+  }
+  document.getElementById('backup-btn').hidden = !localStorage.getItem(key);
+}
+
+function exportPreSyncBackup() {
+  const content = localStorage.getItem(preSyncBackupKey());
+  if (content) downloadData(JSON.parse(content), 'timetrack-respaldo-previo');
+}
 
 // ─── GOOGLE DRIVE SYNC ───────────────────────────────────────────────────────
 const CLIENT_ID = '109763654068-4k2rot3k2n6p7vfo6tvm7uiu9dr6e4ap.apps.googleusercontent.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const FILENAME = 'timetrack-data.json';
 let driveToken = null;
-let driveFileId = localStorage.getItem('tt_drive_file_id') || null;
+let driveFileId = null; // Discover from the signed-in account, never from another browser's cache.
+let tokenExpiresAt = 0;
+let tokenExpiryTimeout = null;
 let saveTimeout = null;
+let syncPromise = null;
+let syncAgain = false;
+let driveConnecting = false;
 
-function driveConnect() {
+function setDriveStatus(status, detail) {
+  const states = {
+    local: ['var(--muted2)', 'Solo en esta computadora'],
+    connecting: ['#aa4', 'Conectando…'],
+    syncing: ['#aa4', 'Sincronizando…'],
+    pending: ['#aa4', 'Cambios por sincronizar'],
+    saved: ['#4a4', 'Sincronizado con Drive'],
+    expired: ['#c00', 'Vuelve a conectar Drive'],
+    offline: ['#aa4', 'Sin internet · copia local'],
+    error: ['#c00', 'No se pudo sincronizar']
+  };
+  const [color, label] = states[status] || states.local;
+  document.getElementById('drive-dot').style.background = color;
+  document.getElementById('drive-label').textContent = detail || label;
+  document.getElementById('drive-status').title = detail || label;
+  const button = document.getElementById('drive-btn');
+  button.disabled = driveConnecting || status === 'connecting';
+  button.textContent = driveToken ? 'Sincronizar ahora' : 'Conectar Google Drive';
+  document.getElementById('drive-switch').hidden = !driveToken;
+  document.getElementById('backup-btn').hidden = !localStorage.getItem(preSyncBackupKey());
+}
+
+function expireDriveToken() {
+  driveToken = null;
+  clearTimeout(tokenExpiryTimeout);
+  setDriveStatus('expired');
+}
+
+async function driveRequest(url, options = {}) {
+  if (!driveToken || Date.now() >= tokenExpiresAt) {
+    expireDriveToken();
+    throw new Error('La sesión de Google venció. Vuelve a conectar Drive.');
+  }
+  const response = await fetch(url, {
+    ...options,
+    cache: 'no-store',
+    headers: { ...options.headers, Authorization: 'Bearer ' + driveToken },
+    signal: AbortSignal.timeout(30000)
+  });
+  if (response.status === 401) expireDriveToken();
+  if (!response.ok) {
+    const error = new Error('Google Drive respondió con error ' + response.status + '. Los datos siguen guardados en esta computadora.');
+    error.status = response.status;
+    throw error;
+  }
+  return response;
+}
+
+function driveConnect(changeAccount = false) {
+  if (driveConnecting) return;
+  if (driveToken && !changeAccount) { driveSync(); return; }
+  if (!window.google?.accounts?.oauth2) {
+    setDriveStatus('error', 'Google no cargó. Revisa internet y recarga.');
+    return;
+  }
+  if (location.protocol === 'file:') {
+    setDriveStatus('error', 'Abre la app desde su dirección web para conectar Google.');
+    return;
+  }
+  driveConnecting = true;
+  clearTimeout(saveTimeout);
+  saveTimeout = null;
+  setDriveStatus('connecting');
+  const finish = () => { driveConnecting = false; document.getElementById('drive-btn').disabled = false; };
   const client = google.accounts.oauth2.initTokenClient({
     client_id: CLIENT_ID,
     scope: SCOPE,
-    callback: (resp) => {
-      if (resp.error) { setDriveStatus('error'); return; }
-      driveToken = resp.access_token;
-      setDriveStatus('conectado');
-      document.getElementById('drive-btn').textContent = 'Drive conectado ✓';
-      document.getElementById('drive-btn').disabled = true;
-      driveSave();
+    error_callback: () => { finish(); setDriveStatus('error', 'Conexión cancelada. Tus datos siguen aquí.'); },
+    callback: async (resp) => {
+      if (resp.error || !resp.access_token) { finish(); setDriveStatus('error'); return; }
+      try {
+        // Finish any in-flight synchronization before changing credentials/account.
+        if (syncPromise) await syncPromise;
+        driveToken = resp.access_token;
+        tokenExpiresAt = Date.now() + (Number(resp.expires_in) || 3600) * 1000 - 30000;
+        clearTimeout(tokenExpiryTimeout);
+        tokenExpiryTimeout = setTimeout(expireDriveToken, Math.max(0, tokenExpiresAt - Date.now()));
+        const response = await driveRequest('https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)');
+        const { user } = await response.json();
+        if (!user?.permissionId) throw new Error('No se pudo identificar la cuenta de Drive.');
+        const oldOwner = localStorage.getItem('tt_drive_owner');
+        if (oldOwner && oldOwner !== user.permissionId) {
+          persistLocal();
+          state = readLocalState('tt_account_' + user.permissionId);
+          previousState = JSON.parse(JSON.stringify(state));
+          renderSyncedState();
+        }
+        localStorage.setItem('tt_drive_owner', user.permissionId);
+        persistLocal();
+        document.getElementById('drive-account').textContent = user.emailAddress || 'Cuenta de Google conectada';
+        driveFileId = null;
+        await driveSync(true);
+      } catch (error) {
+        driveToken = null;
+        clearTimeout(tokenExpiryTimeout);
+        setDriveStatus('error', error.message);
+        console.error('Drive connect error:', error);
+      } finally { finish(); }
     }
   });
-  client.requestAccessToken();
+  client.requestAccessToken({ prompt: 'select_account' });
 }
 
-function setDriveStatus(s) {
-  const dot = document.getElementById('drive-dot');
-  const label = document.getElementById('drive-label');
-  if (s === 'conectado')  { dot.style.background = '#4a4'; label.textContent = 'Drive conectado'; }
-  else if (s === 'saving') { dot.style.background = '#aa4'; label.textContent = 'Guardando...'; }
-  else if (s === 'saved')  { dot.style.background = '#4a4'; label.textContent = 'Guardado en Drive'; }
-  else if (s === 'error')  { dot.style.background = '#c00'; label.textContent = 'Error al guardar'; }
-  else                     { dot.style.background = 'var(--muted2)'; label.textContent = 'Sin conectar'; }
+async function listDriveFiles(query) {
+  const files = [];
+  let pageToken = '';
+  do {
+    const params = new URLSearchParams({ q: query, fields: 'nextPageToken,files(id,name)', pageSize: '100', orderBy: 'createdTime' });
+    if (pageToken) params.set('pageToken', pageToken);
+    const response = await driveRequest('https://www.googleapis.com/drive/v3/files?' + params);
+    const data = await response.json();
+    files.push(...(data.files || []));
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
+  return files;
 }
 
 async function getOrCreateFolder() {
-  // Search for existing TimeTrack folder
-  const search = await fetch(
-    "https://www.googleapis.com/drive/v3/files?q=name%3D'TimeTrack'+and+mimeType%3D'application%2Fvnd.google-apps.folder'+and+trashed%3Dfalse&fields=files(id,name)", {
-    headers: { 'Authorization': 'Bearer ' + driveToken }
-  });
-  const result = await search.json();
-  if (result.files && result.files.length > 0) {
-    return result.files[0].id;
-  }
-  // Create folder
-  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + driveToken, 'Content-Type': 'application/json' },
+  const files = await listDriveFiles("name = 'TimeTrack' and mimeType = 'application/vnd.google-apps.folder' and trashed = false");
+  if (files.length) return files[0].id;
+  const response = await driveRequest('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'TimeTrack', mimeType: 'application/vnd.google-apps.folder' })
   });
-  const folder = await res.json();
+  const folder = await response.json();
+  if (!folder.id) throw new Error('No se pudo crear la carpeta en Drive.');
   return folder.id;
 }
 
-async function driveSave() {
-  if (!driveToken) return;
-  setDriveStatus('saving');
-  const content = JSON.stringify(state, null, 2);
+async function createDriveFile(name, content, folderId) {
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify({ name, mimeType: 'application/json', parents: [folderId] })], { type: 'application/json' }));
+  form.append('file', new Blob([content], { type: 'application/json' }));
+  const response = await driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'POST', body: form });
+  const data = await response.json();
+  if (!data.id) throw new Error('Drive no confirmó el guardado.');
+  return data.id;
+}
 
-  try {
-    if (driveFileId) {
-      // Update existing file content
-      await fetch('https://www.googleapis.com/upload/drive/v3/files/' + driveFileId + '?uploadType=media', {
-        method: 'PATCH',
-        headers: { 'Authorization': 'Bearer ' + driveToken, 'Content-Type': 'application/json' },
-        body: content
-      });
-    } else {
-      // Get or create TimeTrack folder, then create file inside it
-      const folderId = await getOrCreateFolder();
-      localStorage.setItem('tt_drive_folder_id', folderId);
-      const blob = new Blob([content], { type: 'application/json' });
-      const meta = { name: FILENAME, mimeType: 'application/json', parents: [folderId] };
-      const form = new FormData();
-      form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
-      form.append('file', blob);
-      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + driveToken },
-        body: form
-      });
-      const data = await res.json();
-      driveFileId = data.id;
-      localStorage.setItem('tt_drive_file_id', driveFileId);
-    }
-    setDriveStatus('saved');
-  } catch(e) {
-    setDriveStatus('error');
-    console.error('Drive save error:', e);
+function renderSyncedState(previousCounter) {
+  renderAll();
+  restoreTimer();
+  const invoiceNumber = document.getElementById('inv-num');
+  if (previousCounter === undefined || invoiceNumber.value === 'INV-' + String(previousCounter).padStart(3, '0')) {
+    invoiceNumber.value = 'INV-' + String(state.invCounter).padStart(3, '0');
   }
+}
+
+async function performDriveSync() {
+  setDriveStatus('syncing');
+  try {
+    // Preserve the original local history before applying any remote changes.
+    preservePreSyncBackup();
+    // Always read first, including on a new computer. Merge legacy duplicates too.
+    const files = await listDriveFiles("name = 'timetrack-data.json' and mimeType != 'application/vnd.google-apps.folder' and trashed = false");
+    let primaryContent = null;
+    let primaryEtag = null;
+    let primaryLegacyContent = null;
+    let merged = state;
+    for (const file of files) {
+      const response = await driveRequest('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(file.id) + '?alt=media');
+      const raw = await response.json();
+      const remote = normalizeState(raw);
+      merged = mergeStates(merged, remote);
+      if (file === files[0]) {
+        primaryContent = remote;
+        primaryEtag = response.headers.get('ETag');
+        if (!raw._sync) primaryLegacyContent = JSON.stringify(raw);
+      }
+    }
+    // Include edits made while the network requests were in progress.
+    const previousContent = JSON.stringify(state);
+    const previousCounter = state.invCounter;
+    state = mergeStates(state, merged);
+    persistLocal();
+    if (JSON.stringify(state) !== previousContent) renderSyncedState(previousCounter);
+    driveFileId = files[0]?.id || null;
+    const content = JSON.stringify(state);
+    if (driveFileId) {
+      if (content !== JSON.stringify(primaryContent)) {
+        // Keep a separate original Drive file before updating legacy data.
+        if (primaryLegacyContent) {
+          const backupName = 'timetrack-respaldo-' + driveFileId + '.json';
+          const backups = await listDriveFiles("name = '" + backupName + "' and trashed = false");
+          if (!backups.length) await createDriveFile(backupName, primaryLegacyContent, await getOrCreateFolder());
+        }
+        const headers = { 'Content-Type': 'application/json' };
+        if (primaryEtag) headers['If-Match'] = primaryEtag;
+        await driveRequest('https://www.googleapis.com/upload/drive/v3/files/' + encodeURIComponent(driveFileId) + '?uploadType=media', {
+          method: 'PATCH', headers, body: content
+        });
+      }
+    } else {
+      driveFileId = await createDriveFile(FILENAME, content, await getOrCreateFolder());
+    }
+    if (JSON.stringify(state) !== content) syncAgain = true;
+    setDriveStatus(syncAgain ? 'pending' : 'saved');
+  } catch (error) {
+    if (error.status === 412) syncAgain = true;
+    if (!navigator.onLine) setDriveStatus('offline');
+    else if (driveToken) setDriveStatus('error', error.message);
+    console.error('Drive sync error:', error);
+  }
+}
+
+function driveSync(fromConnection = false) {
+  if (driveConnecting && !fromConnection) return Promise.resolve();
+  clearTimeout(saveTimeout);
+  saveTimeout = null;
+  if (!driveToken) return Promise.resolve();
+  if (syncPromise) { syncAgain = true; return syncPromise; }
+  syncAgain = false;
+  syncPromise = performDriveSync().finally(() => {
+    syncPromise = null;
+    if (syncAgain && driveToken) {
+      clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(driveSync, 1000);
+    }
+  });
+  return syncPromise;
 }
 
 function save() {
-  localStorage.setItem('tt_state', JSON.stringify(state));
-  // Debounce drive saves — wait 2s after last change
+  // Deleting an active entry must also stop its timer on every computer.
+  if (state.timer && !state.entries.some(e => e.id === state.timer.entryId)) state.timer = null;
+  recordChanges();
+  persistLocal();
   if (driveToken) {
+    setDriveStatus('pending');
     clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(driveSave, 2000);
-  }
+    saveTimeout = setTimeout(driveSync, 500);
+  } else setDriveStatus(navigator.onLine ? 'local' : 'offline');
 }
 
+setInterval(() => {
+  if (document.visibilityState === 'visible') driveSync();
+}, 15000);
+window.addEventListener('online', () => driveToken ? driveSync() : setDriveStatus('local'));
+window.addEventListener('offline', () => setDriveStatus('offline'));
+document.addEventListener('visibilitychange', () => {
+  // Flush a pending save when leaving the page; also refresh on returning.
+  if (driveToken) { clearTimeout(saveTimeout); driveSync(); }
+});
+window.addEventListener('beforeunload', event => {
+  if (driveToken && (saveTimeout || syncPromise)) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
+});
+
 function exportData() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  downloadData(state, 'timetrack-backup');
+}
+
+function downloadData(data, prefix) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const date = new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = 'timetrack-backup-' + date + '.json';
+  a.download = prefix + '-' + date + '.json';
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -564,15 +851,12 @@ function importData(event) {
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const imported = JSON.parse(e.target.result);
-      if (!imported.entries || !imported.projects) {
-        alert('Archivo inválido. Asegúrate de importar un backup de TimeTrack.');
-        return;
-      }
+      const imported = normalizeState(JSON.parse(e.target.result));
       if (!confirm('¿Cargar este backup? Se reemplazarán los datos actuales (' + state.entries.length + ' entradas).')) return;
-      state = imported;
+      // Treat imported records as explicit edits in the current account.
+      state = { ...imported, _sync: state._sync };
       save();
-      renderAll();
+      renderSyncedState();
       alert('✓ Datos importados: ' + state.entries.length + ' entradas, ' + state.projects.length + ' proyectos.');
     } catch(err) {
       alert('Error al leer el archivo: ' + err.message);
@@ -603,7 +887,7 @@ function getTimerSeconds() {
   const entry = state.entries.find(e => e.id === state.timer.entryId);
   if (!entry) return 0;
   const elapsed = (Date.now() - state.timer.startTs) / 1000;
-  return (entry._baseSec || 0) + elapsed;
+  return (entry._baseSec || 0) + Math.max(0, elapsed);
 }
 
 function toggleTimer() {
@@ -634,7 +918,7 @@ function toggleTimer() {
   if (!projId) {
     // auto-create project from client/task
     const newProj = {
-      id: 'p' + Date.now(),
+      id: 'p' + Date.now() + '-' + crypto.randomUUID(),
       name: 'Sin proyecto',
       client: 'Sin cliente',
       currency: document.getElementById('t-currency').value,
@@ -646,7 +930,7 @@ function toggleTimer() {
 
   const proj = state.projects.find(p => p.id === projectId);
   const entry = {
-    id: 'e' + Date.now(),
+    id: 'e' + Date.now() + '-' + crypto.randomUUID(),
     projectId,
     task: taskName,
     date: today(),
@@ -673,15 +957,18 @@ function toggleTimer() {
 
 // Restore timer on page load
 function restoreTimer() {
-  if (!state.timer) return;
-  const entry = state.entries.find(e => e.id === state.timer.entryId);
-  if (!entry) { state.timer = null; save(); return; }
-  document.getElementById('start-btn').textContent = 'Detener';
-  document.getElementById('start-btn').className = 'btn running';
-  document.getElementById('timer-display').className = 'timer-display';
-  document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
+  clearInterval(tickInterval);
+  tickInterval = null;
+  const running = !!state.timer;
+  const button = document.getElementById('start-btn');
+  button.textContent = running ? 'Detener' : 'Iniciar';
+  button.className = running ? 'btn running' : 'btn primary';
+  const display = document.getElementById('timer-display');
+  display.className = running ? 'timer-display' : 'timer-display paused';
+  display.textContent = fmtSec(getTimerSeconds());
+  if (!running) return;
   tickInterval = setInterval(() => {
-    document.getElementById('timer-display').textContent = fmtSec(getTimerSeconds());
+    display.textContent = fmtSec(getTimerSeconds());
     updateStats();
   }, 1000);
 }
@@ -728,7 +1015,7 @@ function createProject() {
   const name = document.getElementById('new-proj-name').value.trim();
   if (!name) return;
   const proj = {
-    id: 'p' + Date.now(),
+    id: 'p' + Date.now() + '-' + crypto.randomUUID(),
     name,
     client: document.getElementById('new-proj-client').value.trim() || 'Sin cliente',
     currency: document.getElementById('t-currency').value,
@@ -754,7 +1041,7 @@ function addManual() {
   if (!task || (!hours && !mins)) { alert('Completa tarea y tiempo.'); return; }
   const proj = state.projects.find(p => p.id === projId);
   const entry = {
-    id: 'e' + Date.now(),
+    id: 'e' + Date.now() + '-' + crypto.randomUUID(),
     projectId: projId || null,
     task,
     date,
@@ -1117,13 +1404,13 @@ function saveEditEntry(id) {
 // ─── DELETE ───────────────────────────────────────────────────────────────────
 function deleteEntry(id) {
   state.entries = state.entries.filter(e => e.id !== id);
-  save(); renderAll();
+  save(); renderAll(); restoreTimer();
 }
 function deleteProject(id) {
   if (!confirm('¿Eliminar proyecto y todas sus entradas?')) return;
   state.projects = state.projects.filter(p => p.id !== id);
   state.entries = state.entries.filter(e => e.projectId !== id);
-  save(); renderAll();
+  save(); renderAll(); restoreTimer();
 }
 
 // ─── NAV ──────────────────────────────────────────────────────────────────────
